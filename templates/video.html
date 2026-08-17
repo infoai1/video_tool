@@ -56,7 +56,11 @@
 
 <input type="search" id="filter" class="filter" placeholder="Filter this transcript…" oninput="filterLines(this.value)">
 
-<ol class="transcript" id="transcript">
+{% if video.youtube_url %}
+<button id="follow-chip" class="btn follow-chip" type="button" hidden>⤓ Follow along</button>
+{% endif %}
+
+<ol class="transcript{% if video.youtube_url %} seekable{% endif %}" id="transcript">
   {% for s in video.segments %}
   <li class="line{% if s.segment_id in matched_ids %} match{% endif %}">
     {% if video.youtube_url %}
@@ -100,9 +104,50 @@
       e.preventDefault();
       player.seekTo(+a.getAttribute('data-t'), true);
       player.playVideo();
-      window.scrollTo({ top: 0, behavior: 'smooth' });
     });
   });
+
+  // ---- play-along sync: the line being spoken highlights and stays in view;
+  // clicking any line plays the video from that moment. Scrolling by hand
+  // pauses auto-follow; the "Follow along" chip (or clicking a line) resumes it.
+  (function () {
+    var lines = [].slice.call(document.querySelectorAll('.transcript .line')).map(function (li) {
+      var a = li.querySelector('.ts');
+      var t = a && a.getAttribute('data-t');
+      return t === null || t === undefined ? null : { t: +t, li: li };
+    }).filter(Boolean);
+    if (!lines.length) return;
+
+    var follow = true, autoScrollAt = 0;
+    var chip = document.getElementById('follow-chip');
+    function resumeFollow() { follow = true; if (chip) chip.hidden = true; }
+    window.addEventListener('scroll', function () {
+      if (Date.now() - autoScrollAt < 1200) return;  // our own smooth-scroll
+      if (follow) { follow = false; if (chip) chip.hidden = false; }
+    }, { passive: true });
+    if (chip) chip.addEventListener('click', resumeFollow);
+
+    lines.forEach(function (l) {
+      l.li.addEventListener('click', function (e) {
+        if (e.target.closest('a')) return;                       // timestamps handle themselves
+        if (window.getSelection && String(window.getSelection())) return;  // copying text
+        if (player && player.seekTo) { player.seekTo(l.t, true); player.playVideo(); resumeFollow(); }
+      });
+    });
+
+    setInterval(function () {
+      if (!player || !player.getCurrentTime || !player.getPlayerState) return;
+      if (player.getPlayerState() !== 1) return;  // sync only while playing
+      var t = player.getCurrentTime();
+      var idx = -1;
+      for (var i = 0; i < lines.length; i++) { if (lines[i].t <= t + 0.5) idx = i; else break; }
+      lines.forEach(function (l, i) { l.li.classList.toggle('playing', i === idx); });
+      if (idx >= 0 && follow) {
+        autoScrollAt = Date.now();
+        lines[idx].li.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 500);
+  })();
 
   // ---- script filter: Roman / Urdu / Both ----------------------------------
   (function () {

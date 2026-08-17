@@ -166,8 +166,39 @@ python cli.py transliterate</pre>
       card.hidden = true;
       document.querySelectorAll('.act.play.on').forEach(function (b) { b.classList.remove('on'); });
     });
-    window.VTResultsPlayer = { play: play };  // shared with inline Expand
+    window.VTResultsPlayer = {
+      play: play,
+      // current playback state, for transcript sync
+      state: function () {
+        var ok = player && player.getCurrentTime;
+        return {
+          yt: curYt,
+          time: ok ? player.getCurrentTime() : 0,
+          playing: ok && player.getPlayerState && player.getPlayerState() === 1,
+        };
+      },
+    };
   })();
+
+  // ---- transcript ↔ video sync (inline panel) ------------------------------
+  // While the video plays, the line being spoken is highlighted and kept in
+  // view inside the open panel. Pauses auto-scroll briefly when the user
+  // scrolls the panel themselves.
+  var SYNC = { panel: null, yt: null, lines: [], userScrollAt: 0, autoScrollAt: 0 };
+  setInterval(function () {
+    if (!SYNC.panel || SYNC.panel.hidden || !window.VTResultsPlayer) return;
+    var st = window.VTResultsPlayer.state();
+    if (st.yt !== SYNC.yt || !st.playing) return;
+    var idx = -1;
+    for (var i = 0; i < SYNC.lines.length; i++) {
+      if (SYNC.lines[i].t <= st.time + 0.5) idx = i; else break;
+    }
+    SYNC.lines.forEach(function (l, i) { l.li.classList.toggle('playing', i === idx); });
+    if (idx >= 0 && Date.now() - SYNC.userScrollAt > 4000) {
+      SYNC.autoScrollAt = Date.now();
+      SYNC.lines[idx].li.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, 500);
 
   // ---- inline Expand: open the transcript in place, keyword-focused ---------
   var SEARCH_Q = {{ q|tojson }};
@@ -184,11 +215,12 @@ python cli.py transliterate</pre>
       var ts = data.youtube_id
         ? '<a class="ts seek" data-t="' + s.t + '" href="#">' + s.ts + '</a>'
         : '<span class="ts">' + s.ts + '</span>';
-      return '<li class="line' + (s.match ? ' match' : '') + '">' + ts +
+      return '<li class="line' + (s.match ? ' match' : '') + '" data-t="' + s.t + '">' + ts +
         '<span class="text"><span class="roman" data-seg="' + s.seg_id + '"></span>' +
         (s.urdu ? '<span class="urdu" dir="rtl"></span>' : '') + '</span></li>';
     }).join('');
-    panel.innerHTML = head + '<ol class="transcript panel-transcript">' + rows + '</ol>';
+    panel.innerHTML = head + '<ol class="transcript panel-transcript' +
+      (data.youtube_id ? ' seekable' : '') + '">' + rows + '</ol>';
 
     // fill text safely, then highlight
     var lis = panel.querySelectorAll('.line');
@@ -210,11 +242,34 @@ python cli.py transliterate</pre>
     panel.querySelectorAll('.ts.seek').forEach(function (a) {
       a.addEventListener('click', function (e) { e.preventDefault(); playAt(+a.getAttribute('data-t')); });
     });
+    // clicking anywhere on a line plays that moment (unless the user is
+    // selecting text to copy)
+    if (data.youtube_id) {
+      panel.querySelectorAll('.line').forEach(function (li) {
+        li.addEventListener('click', function (e) {
+          if (e.target.closest('a')) return;
+          if (window.getSelection && String(window.getSelection())) return;
+          playAt(+li.getAttribute('data-t'));
+        });
+      });
+    }
+
+    // register this panel for play-along sync
+    var tr = panel.querySelector('.panel-transcript');
+    SYNC.panel = panel;
+    SYNC.yt = data.youtube_id;
+    SYNC.lines = [].slice.call(panel.querySelectorAll('.line')).map(function (li) {
+      return { t: +li.getAttribute('data-t'), li: li };
+    });
+    SYNC.userScrollAt = 0;
+    if (tr) tr.addEventListener('scroll', function () {
+      if (Date.now() - SYNC.autoScrollAt > 1200) SYNC.userScrollAt = Date.now();
+    });
 
     // match navigator inside the panel
     var matchLines = [].slice.call(panel.querySelectorAll('.line.match'));
     var countEl = panel.querySelector('.pnav-count');
-    function lineT(li) { var a = li.querySelector('[data-t]'); return a ? +a.getAttribute('data-t') : 0; }
+    function lineT(li) { return +(li.getAttribute('data-t') || 0); }
     var cur = 0, best = Infinity;
     matchLines.forEach(function (li, i) { var d = Math.abs(lineT(li) - focusT); if (d < best) { best = d; cur = i; } });
     function go(i, seek) {
