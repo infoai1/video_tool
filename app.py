@@ -6,6 +6,7 @@ page explains how to build it rather than erroring.
 import datetime
 import hmac
 import json
+import os
 
 import config
 import db
@@ -13,6 +14,7 @@ import export
 import jobs
 import library
 import search
+import transcribe
 import transliterate
 from flask import (Flask, abort, jsonify, redirect, render_template, request,
                    session, url_for)
@@ -301,6 +303,47 @@ def api_transcribe():
     return jsonify({"ok": True, "job_id": job_id, "status": "queued"})
 
 
+@app.route("/api/sync_channel", methods=["POST"])
+def api_sync_channel():
+    """Scan a YouTube channel (or playlist) and queue transcription for every
+    upload that isn't in the library yet — so a whole backlog of new videos can
+    be caught up in one paste, instead of one link at a time."""
+    if not db.exists():
+        return jsonify({"ok": False, "error": "store not built yet"}), 503
+    url = ((request.get_json(silent=True) or {}).get("url") or "").strip()
+    if not url:
+        return jsonify({"ok": False, "error": "Paste a channel or playlist link."}), 400
+    conn = db.connect()
+    try:
+        try:
+            videos = transcribe.list_channel_videos(url)
+        except transcribe.TranscribeError as e:
+            return jsonify({"ok": False, "error": str(e)}), 200
+        if not videos:
+            return jsonify({"ok": False,
+                            "error": "No videos found at that link — check it's a channel or playlist URL."}), 200
+        already = queued = 0
+        queued_titles = []
+        for v in videos:
+            canonical = f"https://www.youtube.com/watch?v={v['id']}"
+            if transcribe.existing_video(conn, v["id"]):
+                already += 1
+                continue
+            if jobs.active_for_url(conn, canonical):
+                continue  # already queued/running from an earlier sync
+            jobs.enqueue_transcribe(conn, canonical, title=v["title"])
+            queued += 1
+            if len(queued_titles) < 50:
+                queued_titles.append(v["title"])
+        return jsonify({
+            "ok": True, "found": len(videos), "already": already, "queued": queued,
+            "titles": queued_titles,
+            "cookies_ready": bool(config.YT_COOKIES and os.path.exists(config.YT_COOKIES)),
+        })
+    finally:
+        conn.close()
+
+
 @app.route("/api/romanize_video", methods=["POST"])
 def api_romanize_video():
     """Enqueue background romanization of a whole video, so the user can keep
@@ -411,9 +454,10 @@ def dashboard():
         ).fetchall()
     finally:
         conn.close()
+    yt_ready = bool(config.YT_COOKIES and os.path.exists(config.YT_COOKIES))
     return render_template(
         "dashboard.html", no_store=False, stats=stats, job_list=job_list,
-        active_all_job=active_all_job,
+        active_all_job=active_all_job, yt_ready=yt_ready,
         romanized=[
             {"id": r[0], "title": r[1], "done": r[2], "total": r[3], "last": r[4]}
             for r in romanized_rows

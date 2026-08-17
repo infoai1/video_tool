@@ -58,6 +58,10 @@ SONIOX_URL = "https://api.soniox.com/v1"
 YT_COOKIES = os.environ.get("VIDEO_TOOL_YT_COOKIES", "")
 # Rough target length of a transcript segment, in seconds.
 SEGMENT_SECONDS = float(os.environ.get("VIDEO_TOOL_SEGMENT_SECONDS", "18"))
+# How many of a channel's newest uploads to scan when syncing (newest first).
+# Generous by default so a long catch-up isn't truncated; already-transcribed
+# ones are skipped, so a high cap is cheap.
+CHANNEL_SCAN_LIMIT = int(os.environ.get("VIDEO_TOOL_CHANNEL_SCAN_LIMIT", "500"))
 
 # Login. Credentials + session secret live in a JSON file OUTSIDE the repo
 # (auth.json, gitignored), or in env vars. When neither is set, auth is OFF —

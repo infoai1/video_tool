@@ -49,6 +49,34 @@ def _yt_error(stderr):
     return "yt-dlp: " + last[:200]
 
 
+def list_channel_videos(url, limit=None):
+    """List a channel's or playlist's videos WITHOUT downloading — newest first,
+    capped at `limit` — as [{"id":..., "title":...}].
+
+    Uses yt-dlp's flat playlist listing, so it's fast (metadata only) even for a
+    large channel. Accepts a channel URL (…/@handle, …/channel/UC…, optionally
+    with /videos) or a playlist URL. Raises TranscribeError on failure.
+    """
+    limit = limit or config.CHANNEL_SCAN_LIMIT
+    proc = subprocess.run(
+        _yt_cmd(["--flat-playlist", "--playlist-end", str(limit),
+                 "--print", "%(id)s\t%(title)s", url]),
+        capture_output=True, text=True, timeout=300,
+    )
+    if proc.returncode != 0:
+        raise TranscribeError(_yt_error(proc.stderr))
+    out, seen = [], set()
+    for line in proc.stdout.splitlines():
+        if "\t" not in line:
+            continue
+        vid, title = line.split("\t", 1)
+        vid = vid.strip()
+        if vid and vid not in seen:
+            seen.add(vid)
+            out.append({"id": vid, "title": title.strip() or vid})
+    return out
+
+
 def youtube_metadata(url):
     proc = subprocess.run(
         _yt_cmd(["-j", "--skip-download", url]),

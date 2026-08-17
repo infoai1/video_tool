@@ -12,6 +12,55 @@
     <div class="stat"><span class="num">{{ "%.1f"|format(stats.pct) }}%</span><span class="lbl">romanized ({{ "{:,}".format(stats.romanized) }})</span></div>
   </div>
 
+  <div class="sync-card">
+    <h2>Add new videos from the channel</h2>
+    <p class="muted">Paste the channel’s (or a playlist’s) YouTube link. It finds every upload,
+      skips the ones already here, and queues transcription for just the new ones.</p>
+    {% if not yt_ready %}
+    <p class="sync-warn">⚠ YouTube downloads need a <code>youtube_cookies.txt</code> on the server first —
+      until that’s added, queued videos will fail with an authentication error.</p>
+    {% endif %}
+    <div class="sync-row">
+      <input type="url" id="sync-url" placeholder="https://www.youtube.com/@CPSGlobal/videos">
+      <button id="sync-btn" class="btn" type="button">Find new videos</button>
+    </div>
+    <p id="sync-status" class="muted" hidden></p>
+    <ul id="sync-list" class="sync-list" hidden></ul>
+  </div>
+  <script>
+    (function () {
+      var btn = document.getElementById('sync-btn');
+      var inp = document.getElementById('sync-url');
+      var status = document.getElementById('sync-status');
+      var list = document.getElementById('sync-list');
+      function show(msg) { status.hidden = false; status.textContent = msg; }
+      btn.addEventListener('click', async function () {
+        var url = (inp.value || '').trim();
+        if (!url) { show('Paste a channel or playlist link first.'); return; }
+        btn.disabled = true; list.hidden = true; list.innerHTML = '';
+        show('Scanning the channel… this can take up to a minute.');
+        try {
+          var r = await fetch('/api/sync_channel', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: url }),
+          });
+          var j = await r.json();
+          if (!j.ok) { show(j.error || 'Could not scan that link.'); btn.disabled = false; return; }
+          show('Found ' + j.found + ' uploads · ' + j.already + ' already here · queued ' +
+               j.queued + ' new' + (j.queued && !j.cookies_ready ? ' (these will fail until cookies are added)' : '') + '.');
+          if (j.titles && j.titles.length) {
+            list.hidden = false;
+            list.innerHTML = j.titles.map(function (t) {
+              return '<li>' + t.replace(/[&<>]/g, function (c) { return { '&':'&amp;','<':'&lt;','>':'&gt;' }[c]; }) + '</li>';
+            }).join('');
+          }
+          if (j.queued) setTimeout(function () { location.reload(); }, 4000);  // show them in the table below
+        } catch (e) { show('Could not scan — try again.'); }
+        btn.disabled = false;
+      });
+    })();
+  </script>
+
   <div class="bulk">
     {% if stats.pending %}
       <button id="rall-btn" class="btn"{% if active_all_job %} hidden{% endif %}>
