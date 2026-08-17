@@ -69,10 +69,12 @@
     var tag = document.createElement('script');
     tag.src = 'https://www.youtube.com/iframe_api';
     document.head.appendChild(tag);
+    // ?t=SECONDS (from a search "expand" link) opens at that moment and plays.
+    var startAt = parseInt(new URLSearchParams(location.search).get('t') || '0', 10) || 0;
     window.onYouTubeIframeAPIReady = function () {
       player = new YT.Player('player', {
         videoId: el.getAttribute('data-yt'),
-        playerVars: { rel: 0 },
+        playerVars: { rel: 0, start: startAt, autoplay: startAt ? 1 : 0 },
       });
     };
   })();

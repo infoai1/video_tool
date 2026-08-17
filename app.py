@@ -83,6 +83,7 @@ def index():
     hits = []
     youtube_not_found = False
     active_job = None
+    roman_terms, urdu_terms = [], []
     if q:
         # Writable: search caches the query's Urdu transliteration on first use.
         conn = db.connect()
@@ -97,11 +98,13 @@ def index():
                 active_job = active[0] if active else None
             else:
                 hits = search.search(conn, q, limit=60)
+                roman_terms, urdu_terms = search.query_highlight_terms(conn, q)
         finally:
             conn.close()
     return render_template(
         "index.html", q=q, hits=hits, no_store=False,
         youtube_not_found=youtube_not_found, active_job=active_job,
+        roman_terms=roman_terms, urdu_terms=urdu_terms,
     )
 
 

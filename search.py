@@ -62,11 +62,24 @@ def _row_to_hit(row):
         "video_id": vid,
         "video_title": title,
         "youtube_url": url,
+        "youtube_id": youtube_id(url),
         "start_time": start,
         "timestamp_url": youtube_timestamp_url(url, start),
         "roman_text": roman,
         "urdu_text": urdu,
     }
+
+
+def query_highlight_terms(conn, q):
+    """(roman_terms, urdu_terms) to highlight in results. Roman uses the raw
+    query words (so the highlight matches what the user typed); Urdu uses the
+    transliterated query tokens already cached by search()."""
+    roman_terms = [t for t in q.split() if t]
+    row = conn.execute(
+        "SELECT urdu FROM query_cache WHERE roman_norm = ?", (normalize.normalize(q),)
+    ).fetchone()
+    urdu_terms = normalize.urdu_tokens(row[0]) if row and row[0] else []
+    return roman_terms, urdu_terms
 
 
 _HIT_COLS = "s.id, v.id, v.title, v.youtube_url, s.start_time, s.roman_text, s.urdu_text"

@@ -59,8 +59,15 @@ main { max-width: 780px; margin: 0 auto; padding: 1.25rem 1rem 3rem; }
   padding: .9rem 1rem; margin-bottom: .75rem;
   background: var(--card); border: 1px solid var(--line); border-radius: 12px;
 }
+.hit.playable { cursor: pointer; }
+.hit.playable:hover { border-color: var(--accent); }
 .hit-head { display: flex; justify-content: space-between; gap: .75rem; align-items: baseline; }
+.hit-actions { display: inline-flex; gap: .8rem; align-items: baseline; white-space: nowrap; }
+.hit-actions .open { color: var(--muted); text-decoration: none; font-size: .82rem; }
+.hit-actions .open:hover { color: var(--accent); }
 .vtitle { color: var(--accent); font-weight: 600; text-decoration: none; }
+mark { background: rgba(10,107,87,.22); color: inherit; border-radius: 3px; padding: 0 .1em; }
+@media (prefers-color-scheme: dark) { mark { background: rgba(79,209,176,.28); } }
 .ts {
   color: var(--muted); font-variant-numeric: tabular-nums; text-decoration: none;
   white-space: nowrap; font-size: .9rem;
