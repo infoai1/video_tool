@@ -4,7 +4,7 @@
 <h1 class="vhead">{{ video.title or 'Untitled video' }}</h1>
 
 {% if youtube_id %}
-  <div class="player-wrap"><div id="player" data-yt="{{ youtube_id }}"></div></div>
+  <div class="player-solo"><div class="player-wrap"><div id="player" data-yt="{{ youtube_id }}"></div></div></div>
 {% elif video.youtube_url %}
   <p><a class="ext" href="{{ video.youtube_url }}" target="_blank" rel="noopener">Open on YouTube ↗</a></p>
 {% endif %}

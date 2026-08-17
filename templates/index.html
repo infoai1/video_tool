@@ -62,23 +62,38 @@ python cli.py transliterate</pre>
   </div>
 {% elif q and hits is not none %}
   {% if hits %}
-    <div id="player-wrap" class="player-wrap" hidden><div id="player"></div></div>
-    <p class="count">{{ hits|length }} result{{ '' if hits|length == 1 else 's' }} for “{{ q|e }}” —
-      click a snippet to play it here.</p>
+    <div id="player-card" class="player-card" hidden>
+      <div class="player-bar">
+        <span id="now-playing" class="now-playing"></span>
+        <button type="button" id="player-close" class="icon-btn" aria-label="Close player">✕</button>
+      </div>
+      <div class="player-wrap"><div id="player"></div></div>
+    </div>
+    <p class="count">{{ hits|length }} result{{ '' if hits|length == 1 else 's' }} for “{{ q|e }}”</p>
     <ul class="hits">
       {% for h in hits %}
-      <li class="hit{{ ' playable' if h.youtube_id else '' }}"
-          {% if h.youtube_id %}data-yt="{{ h.youtube_id }}" data-t="{{ h.start_time|int }}"{% endif %}>
-        <div class="hit-head">
-          <span class="vtitle">{{ h.video_title or 'Untitled video' }}</span>
-          <span class="hit-actions">
-            <span class="ts">▶ {{ h.start_time|hhmmss }}</span>
-            <a class="open" href="{{ url_for('video', video_id=h.video_id) }}?t={{ h.start_time|int }}"
-               target="_blank" rel="noopener" title="Open full transcript in a new tab">expand ↗</a>
-          </span>
+      <li class="hit">
+        <div class="hit-body">
+          <div class="hit-head">
+            <span class="vtitle">{{ h.video_title or 'Untitled video' }}</span>
+            <span class="ts-badge">{{ h.start_time|hhmmss }}</span>
+          </div>
+          <p class="roman" data-seg="{{ h.segment_id }}">{{ h.roman_text or '' }}</p>
+          {% if h.urdu_text %}<p class="urdu" dir="rtl">{{ h.urdu_text }}</p>{% endif %}
         </div>
-        <p class="roman" data-seg="{{ h.segment_id }}">{{ h.roman_text or '' }}</p>
-        {% if h.urdu_text %}<p class="urdu" dir="rtl">{{ h.urdu_text }}</p>{% endif %}
+        <div class="hit-actions">
+          {% if h.youtube_id %}
+          <button type="button" class="act play" data-yt="{{ h.youtube_id }}"
+                  data-t="{{ h.start_time|int }}"
+                  data-title="{{ (h.video_title or 'Video')|e }} · {{ h.start_time|hhmmss }}">
+            <span class="ico" aria-hidden="true">▶</span> Play
+          </button>
+          {% endif %}
+          <a class="act ghost" href="{{ url_for('video', video_id=h.video_id) }}?t={{ h.start_time|int }}"
+             target="_blank" rel="noopener" title="Open the full transcript in a new tab">
+            <span class="ico" aria-hidden="true">⤢</span> Expand
+          </a>
+        </div>
       </li>
       {% endfor %}
     </ul>
@@ -114,29 +129,37 @@ python cli.py transliterate</pre>
   if (window.VT) VT.romanize().then(highlightAll); else highlightAll();
   highlightAll();  // Urdu can highlight immediately
 
-  // ---- inline player: click a snippet to play it here ----------------------
+  // ---- inline player: Play buttons load a clip into a sticky player --------
   (function () {
-    var wrap = document.getElementById('player-wrap');
+    var card = document.getElementById('player-card');
+    var label = document.getElementById('now-playing');
     var player = null, curYt = null, pending = null;
     var tag = document.createElement('script');
     tag.src = 'https://www.youtube.com/iframe_api';
     document.head.appendChild(tag);
     window.onYouTubeIframeAPIReady = function () {
       player = new YT.Player('player', { playerVars: { rel: 0 },
-        events: { onReady: function () { if (pending) { play(pending.yt, pending.t); pending = null; } } } });
+        events: { onReady: function () { if (pending) { play(pending.yt, pending.t, pending.title); pending = null; } } } });
     };
-    function play(yt, t) {
-      if (!player || !player.loadVideoById) { pending = { yt: yt, t: t }; wrap.hidden = false; return; }
-      wrap.hidden = false;
+    function play(yt, t, title) {
+      card.hidden = false;
+      label.textContent = title || '';
+      if (!player || !player.loadVideoById) { pending = { yt: yt, t: t, title: title }; return; }
       if (yt === curYt) { player.seekTo(t, true); player.playVideo(); }
       else { curYt = yt; player.loadVideoById({ videoId: yt, startSeconds: t }); }
-      wrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      card.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
-    document.querySelectorAll('.hit.playable').forEach(function (li) {
-      li.addEventListener('click', function (e) {
-        if (e.target.closest('a')) return;  // let "expand ↗" open normally
-        play(li.getAttribute('data-yt'), +li.getAttribute('data-t'));
+    document.querySelectorAll('.act.play').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        play(btn.getAttribute('data-yt'), +btn.getAttribute('data-t'), btn.getAttribute('data-title'));
+        document.querySelectorAll('.act.play.on').forEach(function (b) { b.classList.remove('on'); });
+        btn.classList.add('on');
       });
+    });
+    document.getElementById('player-close').addEventListener('click', function () {
+      if (player && player.pauseVideo) player.pauseVideo();
+      card.hidden = true;
+      document.querySelectorAll('.act.play.on').forEach(function (b) { b.classList.remove('on'); });
     });
   })();
 </script>
