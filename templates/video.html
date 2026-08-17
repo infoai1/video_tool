@@ -29,12 +29,10 @@
     {% endif %}
 
     <div class="seg" id="scriptfilter">
-      <button type="button" data-mode="both" class="on">Both</button>
-      <button type="button" data-mode="roman">Roman</button>
+      <button type="button" data-mode="roman" class="on">Roman</button>
+      <button type="button" data-mode="both">Both</button>
       <button type="button" data-mode="urdu">Urdu</button>
     </div>
-
-    <button id="romanize-btn" class="btn" type="button">Show Roman Urdu</button>
 
     <button id="save-video" class="btn ghost star-btn {{ 'on' if saved_video }}" type="button"
             data-video="{{ video.id }}" title="Save this video to your library">
@@ -46,8 +44,8 @@
       <div class="export-menu">
         <label>Script
           <select id="exp-script">
-            <option value="both">Both</option>
             <option value="roman">Roman only</option>
+            <option value="both">Both</option>
             <option value="urdu">Urdu only</option>
           </select>
         </label>
@@ -161,7 +159,83 @@
     }, 500);
   })();
 
-  // ---- script filter: Roman / Urdu / Both ----------------------------------
+  // ---- one romanization engine, shared by the script toggle and Export -----
+  // Selecting "Roman" or "Both" on a not-yet-romanized lecture starts it
+  // automatically (there is no separate button). Lines that don't have Roman
+  // yet fall back to showing their Urdu (faded) via CSS, so nothing is ever
+  // blank while it fills.
+  var ROMANIZE = (function () {
+    var wrap = document.getElementById('romanize-progress');
+    var fill = wrap.querySelector('.bar-fill');
+    var ptext = wrap.querySelector('.ptext');
+    var running = false, done = false, etaLabel = '';
+
+    function pending() {
+      return [].slice.call(document.querySelectorAll('.roman[data-seg]'))
+        .filter(function (el) { return !el.textContent.trim(); }).length;
+    }
+    if (pending() === 0) done = true;
+
+    function showProgress(pct, label) { wrap.hidden = false; fill.style.width = (pct || 0) + '%'; ptext.textContent = label; }
+
+    async function poll(jobId) {
+      try {
+        var r = await fetch('/api/job/' + jobId);
+        var j = await r.json();
+        if (j.status === 'error') {
+          showProgress(0, 'Could not romanize: ' + (j.detail || 'error'));
+          running = false; try { localStorage.removeItem('vt-romanize-' + VIDEO_ID); } catch (e) {}
+          return;
+        }
+        showProgress(j.progress || 0, 'Romanizing ' + Math.round(j.progress || 0) + '%' + etaLabel +
+          ' — you’ll be notified when it’s ready, and the transcript (.docx with timestamps) will download automatically.');
+        if (j.status === 'done') {
+          await window.VT.romanize();   // fill visible lines from cache
+          running = false; done = true;
+          showProgress(100, 'Done — Roman Urdu ready. Downloading the transcript…');
+          setTimeout(function () { wrap.hidden = true; }, 6000);
+          try { localStorage.removeItem('vt-romanize-' + VIDEO_ID); } catch (e) {}
+          window.VT.notify('Roman Urdu ready', '{{ (video.title or "video")|e }} — transcript downloading.');
+          var sel = document.getElementById('exp-script');
+          window.VT.download('{{ url_for('video_export', video_id=video.id) }}?script=' +
+            (sel ? sel.value : 'roman') + '&timestamps=1');
+          return;
+        }
+        setTimeout(function () { poll(jobId); }, 2000);
+      } catch (e) { setTimeout(function () { poll(jobId); }, 4000); }
+    }
+
+    async function start() {
+      if (running || done || pending() === 0) return;
+      running = true;
+      window.VT.askNotify();
+      showProgress(0, 'Starting…');
+      try {
+        var r = await fetch('/api/romanize_video', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ video_id: VIDEO_ID }),
+        });
+        var j = await r.json();
+        if (!j.ok) { showProgress(0, j.error || 'Could not start.'); running = false; return; }
+        if (j.status === 'done') { await window.VT.romanize(); done = true; running = false; wrap.hidden = true; return; }
+        if (j.eta_minutes) etaLabel = ' (about ' + j.eta_minutes + ' min)';
+        showProgress(0, 'Romanizing — about ' + (j.eta_minutes || 2) + ' min. You’ll be notified when it’s ready, ' +
+          'and the transcript (.docx with timestamps) will download automatically. You can keep browsing.');
+        try { localStorage.setItem('vt-romanize-' + VIDEO_ID, j.job_id); } catch (e) {}
+        poll(j.job_id);
+      } catch (e) { showProgress(0, 'Could not start — try again.'); running = false; }
+    }
+
+    // resume a job started on an earlier visit
+    try {
+      var prev = localStorage.getItem('vt-romanize-' + VIDEO_ID);
+      if (prev) { running = true; poll(+prev); }
+    } catch (e) {}
+
+    return { start: start };
+  })();
+
+  // ---- script filter: Roman (default) / Both / Urdu ------------------------
   (function () {
     var t = document.getElementById('transcript');
     var buttons = document.querySelectorAll('#scriptfilter button');
@@ -170,12 +244,13 @@
       t.classList.add('mode-' + mode);
       buttons.forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-mode') === mode); });
       try { localStorage.setItem('vt-script', mode); } catch (e) {}
+      if (mode === 'roman' || mode === 'both') ROMANIZE.start();  // never show blanks
     }
     buttons.forEach(function (b) {
       b.addEventListener('click', function () { apply(b.getAttribute('data-mode')); });
     });
-    var saved = 'both';
-    try { saved = localStorage.getItem('vt-script') || 'both'; } catch (e) {}
+    var saved = 'roman';
+    try { saved = localStorage.getItem('vt-script') || 'roman'; } catch (e) {}
     apply(saved);
   })();
 
@@ -207,79 +282,6 @@
         var a = document.createElement('a'); a.href = link.href; document.body.appendChild(a); a.click(); a.remove();
       } catch (err) { link.textContent = prev; link.classList.remove('disabled'); }
     });
-  })();
-
-  // ---- background romanization with progress + notification ----------------
-  (function () {
-    var btn = document.getElementById('romanize-btn');
-    var wrap = document.getElementById('romanize-progress');
-    var fill = wrap.querySelector('.bar-fill');
-    var ptext = wrap.querySelector('.ptext');
-    var total = document.querySelectorAll('.roman[data-seg]').length;
-    var have = document.querySelectorAll('.roman[data-seg]:not(:empty)').length;
-    if (have >= total) { btn.style.display = 'none'; return; }  // already romanized
-
-    function showProgress(pct, label) {
-      wrap.hidden = false;
-      fill.style.width = (pct || 0) + '%';
-      ptext.textContent = label;
-    }
-    var etaLabel = '';
-    async function poll(jobId) {
-      try {
-        var r = await fetch('/api/job/' + jobId);
-        var j = await r.json();
-        if (j.status === 'error') {
-          showProgress(0, 'Could not romanize: ' + (j.detail || 'error'));
-          btn.disabled = false; btn.textContent = 'Show Roman Urdu';
-          try { localStorage.removeItem('vt-romanize-' + VIDEO_ID); } catch (e) {}
-          return;
-        }
-        showProgress(j.progress || 0, 'Romanizing ' + Math.round(j.progress || 0) + '%' + etaLabel +
-          ' — you’ll be notified when it’s ready, and the transcript (.docx with timestamps) will download automatically.');
-        if (j.status === 'done') {
-          await window.VT.romanize();   // fill visible lines from cache
-          showProgress(100, 'Done — Roman Urdu ready. Downloading the transcript…');
-          setTimeout(function () { wrap.hidden = true; }, 6000);
-          btn.style.display = 'none';
-          try { localStorage.removeItem('vt-romanize-' + VIDEO_ID); } catch (e) {}
-          window.VT.notify('Roman Urdu ready', '{{ (video.title or "video")|e }} — transcript downloading.');
-          var sel = document.getElementById('exp-script');
-          window.VT.download('{{ url_for('video_export', video_id=video.id) }}?script=' +
-            (sel ? sel.value : 'both') + '&timestamps=1');
-          return;
-        }
-        setTimeout(function () { poll(jobId); }, 2000);
-      } catch (e) {
-        setTimeout(function () { poll(jobId); }, 4000);
-      }
-    }
-    btn.addEventListener('click', async function () {
-      btn.disabled = true; btn.textContent = 'Romanizing…';
-      window.VT.askNotify();
-      showProgress(0, 'Starting…');
-      try {
-        var r = await fetch('/api/romanize_video', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ video_id: VIDEO_ID }),
-        });
-        var j = await r.json();
-        if (!j.ok) { showProgress(0, j.error || 'Could not start.'); btn.disabled = false; btn.textContent = 'Show Roman Urdu'; return; }
-        if (j.status === 'done') { await window.VT.romanize(); wrap.hidden = true; btn.style.display = 'none'; return; }
-        if (j.eta_minutes) etaLabel = ' (about ' + j.eta_minutes + ' min)';
-        showProgress(0, 'Romanizing — about ' + (j.eta_minutes || 2) + ' min. You’ll be notified when it’s ready, ' +
-          'and the transcript (.docx with timestamps) will download automatically. You can keep browsing.');
-        try { localStorage.setItem('vt-romanize-' + VIDEO_ID, j.job_id); } catch (e) {}
-        poll(j.job_id);
-      } catch (e) {
-        showProgress(0, 'Could not start — try again.'); btn.disabled = false; btn.textContent = 'Show Roman Urdu';
-      }
-    });
-    // Resume polling if a job for this video was started earlier.
-    try {
-      var prev = localStorage.getItem('vt-romanize-' + VIDEO_ID);
-      if (prev) { btn.disabled = true; btn.textContent = 'Romanizing…'; poll(+prev); }
-    } catch (e) {}
   })();
 
   // ---- arriving from a search: highlight the term, jump to the match -------

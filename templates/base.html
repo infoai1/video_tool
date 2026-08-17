@@ -13,16 +13,18 @@
       <a href="{{ url_for('index') }}">Search</a>
       <a href="{{ url_for('library_page') }}">Library</a>
       <a href="{{ url_for('videos') }}">Videos</a>
-      <a href="{{ url_for('dashboard') }}">Dashboard</a>
-      <a href="{{ url_for('feedback_page') }}">Feedback</a>
-      {% if session.get('user') %}<a href="{{ url_for('logout') }}">Sign out</a>{% endif %}
+      {% if session.get('user') %}<a class="nav-out" href="{{ url_for('logout') }}">Sign out</a>{% endif %}
     </nav>
   </header>
   <main>
     {% block content %}{% endblock %}
   </main>
   <footer class="foot">
-    Maulana's video lectures, transcribed and transliterated for search.
+    <nav class="foot-nav">
+      <a href="{{ url_for('dashboard') }}">Dashboard</a>
+      <a href="{{ url_for('feedback_page') }}">Feedback &amp; bug reports</a>
+    </nav>
+    <p>Maulana's video lectures, transcribed and transliterated for search.</p>
   </footer>
   <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>

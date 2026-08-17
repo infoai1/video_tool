@@ -158,8 +158,8 @@ python cli.py transliterate</pre>
             </button>
             {% endif %}
             <button type="button" class="act ghost expand"
-                    title="Open the full transcript here, jump to this match">
-              <span class="ico" aria-hidden="true">⤢</span> Expand
+                    title="Read the full transcript here, jump to this match">
+              <span class="ico" aria-hidden="true">☰</span> Read
             </button>
             <button type="button" class="act ghost hit-save{% if h.segment_id in saved_segments %} on{% endif %}"
                     data-video="{{ h.video_id }}" data-seg="{{ h.segment_id }}" data-t="{{ h.start_time|int }}"
@@ -299,7 +299,7 @@ python cli.py transliterate</pre>
         '<details class="export"><summary class="btn sm ghost">Export</summary>' +
           '<div class="export-menu">' +
             '<label>Script <select class="exp-script">' +
-              '<option value="both">Both</option><option value="roman">Roman only</option>' +
+              '<option value="roman">Roman only</option><option value="both">Both</option>' +
               '<option value="urdu">Urdu only</option></select></label>' +
             '<label class="cbx"><input type="checkbox" class="exp-ts" checked> Timestamps</label>' +
             '<a class="btn sm exp-link" href="' + expUrl + '">Download .docx</a>' +

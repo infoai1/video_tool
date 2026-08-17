@@ -92,11 +92,15 @@
   <ul class="timeline">
     {% for e in history %}
     <li class="tl {{ e.kind }}">
-      <span class="tl-when muted">{{ (e.when or '')[:16]|replace('T',' ') }}</span>
-      <span class="tl-kind">{{ {'transcribe':'Transcribed','romanize':'Romanized','save':'Saved'}[e.kind] }}</span>
-      {% if e.video_id %}<a class="tl-title" href="{{ url_for('video', video_id=e.video_id) }}">{{ e.title }}</a>
-      {% else %}<span class="tl-title">{{ e.title }}</span>{% endif %}
-      {% if e.detail %}<span class="tl-detail muted">{{ e.detail }}</span>{% endif %}
+      <div class="tl-line1">
+        <span class="tl-kind">{{ {'transcribe':'Transcribed','romanize':'Romanized','save':'Saved'}[e.kind] }}</span>
+        {% if e.video_id %}<a class="tl-title" href="{{ url_for('video', video_id=e.video_id) }}">{{ e.title }}</a>
+        {% else %}<span class="tl-title">{{ e.title }}</span>{% endif %}
+      </div>
+      <div class="tl-line2 muted">
+        <span class="tl-when">{{ (e.when or '')[:16]|replace('T',' ') }}</span>
+        {% if e.detail %}<span class="tl-sep">·</span><span class="tl-detail">{{ e.detail }}</span>{% endif %}
+      </div>
     </li>
     {% endfor %}
   </ul>
