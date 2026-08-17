@@ -185,6 +185,16 @@ python cli.py transliterate</pre>
   // view inside the open panel. Pauses auto-scroll briefly when the user
   // scrolls the panel themselves.
   var SYNC = { panel: null, yt: null, lines: [], userScrollAt: 0, autoScrollAt: 0 };
+
+  // Scroll ONLY the panel's internal transcript (never the page) so the pinned
+  // player and the Romanize/Export bar stay exactly where they are.
+  function panelScrollTo(li) {
+    var tr = li.closest('.panel-transcript');
+    if (!tr) return;
+    var top = li.offsetTop - Math.round(tr.clientHeight * 0.35);
+    tr.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+  }
+
   setInterval(function () {
     if (!SYNC.panel || SYNC.panel.hidden || !window.VTResultsPlayer) return;
     var st = window.VTResultsPlayer.state();
@@ -196,7 +206,7 @@ python cli.py transliterate</pre>
     SYNC.lines.forEach(function (l, i) { l.li.classList.toggle('playing', i === idx); });
     if (idx >= 0 && Date.now() - SYNC.userScrollAt > 4000) {
       SYNC.autoScrollAt = Date.now();
-      SYNC.lines[idx].li.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      panelScrollTo(SYNC.lines[idx].li);
     }
   }, 500);
 
@@ -293,7 +303,7 @@ python cli.py transliterate</pre>
       cur = (i + matchLines.length) % matchLines.length;
       matchLines.forEach(function (li) { li.classList.remove('current'); });
       var li = matchLines[cur]; li.classList.add('current');
-      li.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      panelScrollTo(li);
       if (countEl) countEl.textContent = (cur + 1) + ' / ' + matchLines.length + ' for “' + SEARCH_Q + '”';
       if (seek) playAt(lineT(li));
     }

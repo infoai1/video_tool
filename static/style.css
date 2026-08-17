@@ -56,6 +56,12 @@ h2 { margin-top: 2rem; font-size: 1.15rem; letter-spacing: -0.01em; }
   padding: .35rem .6rem; border-radius: 8px;
 }
 .topbar nav a:hover { color: var(--fg); background: var(--accent-soft); }
+@media (max-width: 560px) {
+  .topbar { padding: .4rem .7rem; gap: .5rem; }
+  .brand { font-size: .92rem; white-space: nowrap; }
+  .topbar nav { gap: .1rem; }
+  .topbar nav a { font-size: .82rem; padding: .25rem .4rem; }
+}
 
 /* search box */
 .search { display: flex; gap: .55rem; margin: 1.25rem 0 1rem; }
@@ -127,8 +133,12 @@ mark { background: var(--mark); color: inherit; border-radius: 3px; padding: 0 .
 /* inline expand panel */
 .expand-panel { border-top: 1px solid var(--line); padding: .4rem .9rem .8rem; }
 .panel-head {
-  position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between;
-  gap: 1rem; padding: .5rem 0; background: var(--card); border-bottom: 1px solid var(--line);
+  /* pinned just BELOW the sticky player (JS-measured --pin-top), so
+     Romanize / Export / Download stay reachable while the transcript scrolls */
+  position: sticky; top: var(--pin-top, 0px); z-index: 9;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: .6rem; flex-wrap: wrap; padding: .5rem .4rem; margin: 0 -.4rem;
+  background: var(--card); border-bottom: 1px solid var(--line);
 }
 .panel-head .pfull { text-decoration: none; white-space: nowrap; }
 .panel-tools { display: inline-flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
@@ -138,12 +148,12 @@ mark { background: var(--mark); color: inherit; border-radius: 3px; padding: 0 .
 .btn.done { background: transparent; color: var(--muted); border-color: var(--line); }
 .export summary { cursor: pointer; }
 a.disabled { pointer-events: none; opacity: .7; }
-.panel-transcript { max-height: 55vh; overflow-y: auto; margin: .3rem 0 0; }
+.panel-transcript { position: relative; max-height: 55vh; overflow-y: auto; margin: .3rem 0 0; }
 .panel-transcript .line { padding: .4rem 0; }
 
 /* sticky inline player */
 .player-card {
-  position: sticky; top: 3.4rem; z-index: 10; margin: 0 0 1.1rem;
+  position: sticky; top: var(--topbar-h, 3.4rem); z-index: 10; margin: 0 0 1.1rem;
   background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
   overflow: hidden; box-shadow: var(--shadow);
 }
@@ -160,7 +170,7 @@ a.disabled { pointer-events: none; opacity: .7; }
    Export/Download) are pinned together as one sticky block, so those controls
    never scroll out of reach while the transcript moves underneath. */
 .stage {
-  position: sticky; top: 3.3rem; z-index: 10;
+  position: sticky; top: var(--topbar-h, 3.3rem); z-index: 10;
   margin: .6rem 0 .4rem; padding-bottom: .55rem;
   background: var(--bg); border-bottom: 1px solid var(--line);
 }
@@ -171,8 +181,8 @@ a.disabled { pointer-events: none; opacity: .7; }
   border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); background: var(--bg);
 }
 @media (max-width: 560px) {
-  .stage { top: 3rem; }
-  .player-frame { max-width: 100%; }
+  /* phones: keep the pinned video short so the toolbar + transcript fit too */
+  .player-frame { max-width: calc(32vh * 16 / 9); }
 }
 
 /* video page toolbar */

@@ -92,3 +92,32 @@
 
   window.VT = { romanize: romanize, highlight: highlight, romanizeIds: romanizeIds, romanizeVideo: romanizeVideo };
 })();
+
+// Sticky offsets can't be hard-coded: the top bar wraps to two rows on phones
+// and the pinned player's height depends on screen width. Measure the real
+// heights and expose them as CSS vars — --topbar-h anchors the pinned player /
+// stage, --pin-top anchors toolbars that must sit BELOW the pinned player.
+(function () {
+  function px(n) { return Math.ceil(n) + 'px'; }
+  function measure() {
+    var root = document.documentElement.style;
+    var bar = document.querySelector('.topbar');
+    var barH = bar ? bar.getBoundingClientRect().height : 0;
+    root.setProperty('--topbar-h', px(barH));
+    var pin = barH;
+    var pc = document.getElementById('player-card');       // search page player
+    if (pc && !pc.hidden) pin += pc.getBoundingClientRect().height + 12;
+    var stage = document.querySelector('.stage');           // video page player+tools
+    if (stage) pin = barH + stage.getBoundingClientRect().height;
+    root.setProperty('--pin-top', px(pin));
+  }
+  window.VTMeasure = measure;
+  window.addEventListener('resize', measure);
+  window.addEventListener('load', measure);
+  document.addEventListener('DOMContentLoaded', measure);
+  measure();
+  var pc = document.getElementById('player-card');
+  if (pc && window.MutationObserver) {
+    new MutationObserver(measure).observe(pc, { attributes: true, attributeFilter: ['hidden'] });
+  }
+})();

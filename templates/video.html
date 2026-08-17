@@ -317,11 +317,14 @@
     go(cur, false);  // initial focus: player already starts at ?t, just scroll
   })();
 
-  // Scroll a transcript line to a comfortable spot BELOW the pinned player
-  // (about 62% down the viewport), so following along never hides the video.
+  // Scroll a transcript line to sit just BELOW the pinned player + toolbar
+  // (JS-measured --pin-top), so following along never hides the video or its
+  // buttons on any screen size.
   function scrollToLine(li) {
+    var pin = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--pin-top'))
+      || Math.round(window.innerHeight * 0.55);
     var rect = li.getBoundingClientRect();
-    var top = window.pageYOffset + rect.top - Math.round(window.innerHeight * 0.62);
+    var top = window.pageYOffset + rect.top - (pin + 14);
     window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
   }
 
