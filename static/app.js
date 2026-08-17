@@ -67,5 +67,28 @@
     }
   }
 
-  window.VT = { romanize: romanize, highlight: highlight, romanizeIds: romanizeIds };
+  // Romanize a whole video in the background, reporting % via onProgress.
+  // Resolves when done (or immediately if already romanized).
+  async function romanizeVideo(videoId, onProgress) {
+    var r = await fetch('/api/romanize_video', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ video_id: videoId }),
+    });
+    var j = await r.json();
+    if (!j.ok) throw new Error(j.error || 'could not start');
+    if (j.status === 'done' || !j.job_id) { if (onProgress) onProgress(100); return; }
+    var jid = j.job_id;
+    return new Promise(function (resolve, reject) {
+      (function poll() {
+        fetch('/api/job/' + jid).then(function (r) { return r.json(); }).then(function (job) {
+          if (job.status === 'error') { reject(new Error(job.detail || 'error')); return; }
+          if (onProgress) onProgress(job.progress || 0);
+          if (job.status === 'done') { resolve(); return; }
+          setTimeout(poll, 2000);
+        }).catch(function () { setTimeout(poll, 3000); });
+      })();
+    });
+  }
+
+  window.VT = { romanize: romanize, highlight: highlight, romanizeIds: romanizeIds, romanizeVideo: romanizeVideo };
 })();

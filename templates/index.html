@@ -204,13 +204,29 @@ python cli.py transliterate</pre>
   var SEARCH_Q = {{ q|tojson }};
   function renderPanel(panel, data, focusT) {
     var terms = data.roman_terms || [], uterms = data.urdu_terms || [];
-    var head =
-      '<div class="panel-head"><div class="matchnav">' +
-      '<button type="button" class="icon-btn pnav-prev" aria-label="Previous match">‹</button>' +
-      '<span class="pnav-count muted"></span>' +
-      '<button type="button" class="icon-btn pnav-next" aria-label="Next match">›</button></div>' +
-      '<a class="muted pfull" target="_blank" rel="noopener" href="/video/' + data.id +
-      '?t=' + focusT + '&q=' + encodeURIComponent(SEARCH_Q) + '">full page ↗</a></div>';
+    var hasMatch = data.segments.some(function (s) { return s.match; });
+    var nav = hasMatch
+      ? '<div class="matchnav">' +
+        '<button type="button" class="icon-btn pnav-prev" aria-label="Previous match">‹</button>' +
+        '<span class="pnav-count muted"></span>' +
+        '<button type="button" class="icon-btn pnav-next" aria-label="Next match">›</button></div>'
+      : (SEARCH_Q ? '<span class="muted">no exact match here</span>' : '<span></span>');
+    var expUrl = '/video/' + data.id + '/export.docx';
+    var tools =
+      '<div class="panel-tools">' +
+        '<button type="button" class="btn sm romanize-all">Romanize</button>' +
+        '<details class="export"><summary class="btn sm ghost">Export</summary>' +
+          '<div class="export-menu">' +
+            '<label>Script <select class="exp-script">' +
+              '<option value="both">Both</option><option value="roman">Roman only</option>' +
+              '<option value="urdu">Urdu only</option></select></label>' +
+            '<label class="cbx"><input type="checkbox" class="exp-ts" checked> Timestamps</label>' +
+            '<a class="btn sm exp-link" href="' + expUrl + '">Download .docx</a>' +
+          '</div></details>' +
+        '<a class="muted pfull" target="_blank" rel="noopener" href="/video/' + data.id +
+          '?t=' + focusT + '&q=' + encodeURIComponent(SEARCH_Q) + '">full page ↗</a>' +
+      '</div>';
+    var head = '<div class="panel-head">' + nav + tools + '</div>';
     var rows = data.segments.map(function (s) {
       var ts = data.youtube_id
         ? '<a class="ts seek" data-t="' + s.t + '" href="#">' + s.ts + '</a>'
@@ -281,9 +297,46 @@ python cli.py transliterate</pre>
       if (countEl) countEl.textContent = (cur + 1) + ' / ' + matchLines.length + ' for “' + SEARCH_Q + '”';
       if (seek) playAt(lineT(li));
     }
-    panel.querySelector('.pnav-prev').addEventListener('click', function () { go(cur - 1, true); });
-    panel.querySelector('.pnav-next').addEventListener('click', function () { go(cur + 1, true); });
-    go(cur, false);
+    if (hasMatch) {
+      panel.querySelector('.pnav-prev').addEventListener('click', function () { go(cur - 1, true); });
+      panel.querySelector('.pnav-next').addEventListener('click', function () { go(cur + 1, true); });
+      go(cur, false);
+    }
+
+    // Romanize the whole transcript (background, with % on the button), then
+    // fill every line so Export can include Roman.
+    var rbtn = panel.querySelector('.romanize-all');
+    function emptyRomanIds() {
+      var byId = {}, ids = [];
+      panel.querySelectorAll('.roman[data-seg]').forEach(function (el) {
+        if (!el.textContent.trim()) { byId[el.getAttribute('data-seg')] = el; ids.push(el.getAttribute('data-seg')); }
+      });
+      return { byId: byId, ids: ids };
+    }
+    if (!emptyRomanIds().ids.length) { rbtn.textContent = 'Romanized'; rbtn.disabled = true; rbtn.classList.add('done'); }
+    rbtn.addEventListener('click', async function () {
+      rbtn.disabled = true; rbtn.textContent = 'Romanizing…';
+      try {
+        await window.VT.romanizeVideo(data.id, function (pct) { rbtn.textContent = 'Romanizing ' + Math.round(pct) + '%'; });
+        var e = emptyRomanIds();
+        if (e.ids.length) await window.VT.romanizeIds(e.ids, e.byId, function (el) { window.VT.highlight(el, terms); });
+        rbtn.textContent = 'Romanized'; rbtn.classList.add('done');
+      } catch (err) {
+        rbtn.disabled = false; rbtn.textContent = 'Romanize';
+      }
+    });
+
+    // Export .docx link reflects the chosen script + timestamps.
+    var expLink = panel.querySelector('.exp-link');
+    var expScript = panel.querySelector('.exp-script');
+    var expTs = panel.querySelector('.exp-ts');
+    function rebuildExport() {
+      expLink.href = '/video/' + data.id + '/export.docx?script=' + expScript.value +
+        '&timestamps=' + (expTs.checked ? '1' : '0');
+    }
+    expScript.addEventListener('change', rebuildExport);
+    expTs.addEventListener('change', rebuildExport);
+    rebuildExport();
   }
 
   document.querySelectorAll('.act.expand').forEach(function (btn) {
