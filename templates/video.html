@@ -144,7 +144,7 @@
       lines.forEach(function (l, i) { l.li.classList.toggle('playing', i === idx); });
       if (idx >= 0 && follow) {
         autoScrollAt = Date.now();
-        lines[idx].li.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        scrollToLine(lines[idx].li);
       }
     }, 500);
   })();
@@ -302,7 +302,7 @@
       lines.forEach(function (li) { li.classList.remove('current'); });
       var li = lines[cur];
       li.classList.add('current');
-      li.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      scrollToLine(li);
       var c = document.getElementById('m-count');
       if (c) c.textContent = (cur + 1) + ' / ' + lines.length + ' for “' + Q + '”';
       if (seek) { try { if (window.VTPlayer) { window.VTPlayer.seekTo(lineT(li), true); window.VTPlayer.playVideo(); } } catch (e) {} }
@@ -312,6 +312,14 @@
     if (nx) nx.addEventListener('click', function () { go(cur + 1, true); });
     go(cur, false);  // initial focus: player already starts at ?t, just scroll
   })();
+
+  // Scroll a transcript line to a comfortable spot BELOW the pinned player
+  // (about 62% down the viewport), so following along never hides the video.
+  function scrollToLine(li) {
+    var rect = li.getBoundingClientRect();
+    var top = window.pageYOffset + rect.top - Math.round(window.innerHeight * 0.62);
+    window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+  }
 
   // in-page text filter (reads the live Roman text as it fills in)
   function filterLines(q) {
