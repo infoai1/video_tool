@@ -181,6 +181,45 @@ def api_search():
     return jsonify({"query": q, "count": len(hits), "results": hits})
 
 
+@app.route("/api/video/<int:video_id>")
+def api_video(video_id):
+    """A video's transcript + which lines match a query, for inline expand on the
+    search page (no navigation)."""
+    if not db.exists():
+        return jsonify({"error": "store not built yet"}), 503
+    q = (request.args.get("q") or "").strip()
+    conn = db.connect() if q else db.connect_ro()
+    matched, roman_terms, urdu_terms = [], [], []
+    try:
+        data = search.get_video(conn, video_id)
+        if data is None:
+            return jsonify({"error": "no such video"}), 404
+        if q:
+            matched = set(search.video_matches(conn, video_id, q))
+            roman_terms, urdu_terms = search.query_highlight_terms(conn, q)
+    finally:
+        conn.close()
+    return jsonify({
+        "id": data["id"],
+        "title": data["title"],
+        "youtube_id": search.youtube_id(data["youtube_url"]),
+        "youtube_url": data["youtube_url"],
+        "roman_terms": roman_terms,
+        "urdu_terms": urdu_terms,
+        "segments": [
+            {
+                "seg_id": s["segment_id"],
+                "t": int(s["start_time"]),
+                "ts": _hhmmss(s["start_time"]),
+                "roman": s["roman_text"],
+                "urdu": s["urdu_text"],
+                "match": s["segment_id"] in matched,
+            }
+            for s in data["segments"]
+        ],
+    })
+
+
 @app.route("/api/romanize", methods=["POST"])
 def api_romanize():
     """On-demand transliteration for the segments a page is showing. The frontend

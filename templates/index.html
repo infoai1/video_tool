@@ -72,29 +72,33 @@ python cli.py transliterate</pre>
     <p class="count">{{ hits|length }} result{{ '' if hits|length == 1 else 's' }} for “{{ q|e }}”</p>
     <ul class="hits">
       {% for h in hits %}
-      <li class="hit">
-        <div class="hit-body">
-          <div class="hit-head">
-            <span class="vtitle">{{ h.video_title or 'Untitled video' }}</span>
-            <span class="ts-badge">{{ h.start_time|hhmmss }}</span>
+      <li class="hit" data-video="{{ h.video_id }}"
+          {% if h.youtube_id %}data-yt="{{ h.youtube_id }}" data-t="{{ h.start_time|int }}"{% endif %}
+          data-title="{{ (h.video_title or 'Video')|e }}">
+        <div class="hit-row">
+          <div class="hit-body">
+            <div class="hit-head">
+              <span class="vtitle">{{ h.video_title or 'Untitled video' }}</span>
+              <span class="ts-badge">{{ h.start_time|hhmmss }}</span>
+            </div>
+            <p class="roman" data-seg="{{ h.segment_id }}">{{ h.roman_text or '' }}</p>
+            {% if h.urdu_text %}<p class="urdu" dir="rtl">{{ h.urdu_text }}</p>{% endif %}
           </div>
-          <p class="roman" data-seg="{{ h.segment_id }}">{{ h.roman_text or '' }}</p>
-          {% if h.urdu_text %}<p class="urdu" dir="rtl">{{ h.urdu_text }}</p>{% endif %}
+          <div class="hit-actions">
+            {% if h.youtube_id %}
+            <button type="button" class="act play" data-yt="{{ h.youtube_id }}"
+                    data-t="{{ h.start_time|int }}"
+                    data-title="{{ (h.video_title or 'Video')|e }} · {{ h.start_time|hhmmss }}">
+              <span class="ico" aria-hidden="true">▶</span> Play
+            </button>
+            {% endif %}
+            <button type="button" class="act ghost expand"
+                    title="Open the full transcript here, jump to this match">
+              <span class="ico" aria-hidden="true">⤢</span> Expand
+            </button>
+          </div>
         </div>
-        <div class="hit-actions">
-          {% if h.youtube_id %}
-          <button type="button" class="act play" data-yt="{{ h.youtube_id }}"
-                  data-t="{{ h.start_time|int }}"
-                  data-title="{{ (h.video_title or 'Video')|e }} · {{ h.start_time|hhmmss }}">
-            <span class="ico" aria-hidden="true">▶</span> Play
-          </button>
-          {% endif %}
-          <a class="act ghost"
-             href="{{ url_for('video', video_id=h.video_id) }}?t={{ h.start_time|int }}&q={{ q|urlencode }}"
-             target="_blank" rel="noopener" title="Open the full transcript, jump to this match">
-            <span class="ico" aria-hidden="true">⤢</span> Expand
-          </a>
-        </div>
+        <div class="expand-panel" hidden></div>
       </li>
       {% endfor %}
     </ul>
@@ -162,7 +166,100 @@ python cli.py transliterate</pre>
       card.hidden = true;
       document.querySelectorAll('.act.play.on').forEach(function (b) { b.classList.remove('on'); });
     });
+    window.VTResultsPlayer = { play: play };  // shared with inline Expand
   })();
+
+  // ---- inline Expand: open the transcript in place, keyword-focused ---------
+  var SEARCH_Q = {{ q|tojson }};
+  function renderPanel(panel, data, focusT) {
+    var terms = data.roman_terms || [], uterms = data.urdu_terms || [];
+    var head =
+      '<div class="panel-head"><div class="matchnav">' +
+      '<button type="button" class="icon-btn pnav-prev" aria-label="Previous match">‹</button>' +
+      '<span class="pnav-count muted"></span>' +
+      '<button type="button" class="icon-btn pnav-next" aria-label="Next match">›</button></div>' +
+      '<a class="muted pfull" target="_blank" rel="noopener" href="/video/' + data.id +
+      '?t=' + focusT + '&q=' + encodeURIComponent(SEARCH_Q) + '">full page ↗</a></div>';
+    var rows = data.segments.map(function (s) {
+      var ts = data.youtube_id
+        ? '<a class="ts seek" data-t="' + s.t + '" href="#">' + s.ts + '</a>'
+        : '<span class="ts">' + s.ts + '</span>';
+      return '<li class="line' + (s.match ? ' match' : '') + '">' + ts +
+        '<span class="text"><span class="roman" data-seg="' + s.seg_id + '"></span>' +
+        (s.urdu ? '<span class="urdu" dir="rtl"></span>' : '') + '</span></li>';
+    }).join('');
+    panel.innerHTML = head + '<ol class="transcript panel-transcript">' + rows + '</ol>';
+
+    // fill text safely, then highlight
+    var lis = panel.querySelectorAll('.line');
+    data.segments.forEach(function (s, i) {
+      var r = lis[i].querySelector('.roman'); if (r) r.textContent = s.roman || '';
+      var u = lis[i].querySelector('.urdu'); if (u) u.textContent = s.urdu || '';
+    });
+    panel.querySelectorAll('.roman').forEach(function (el) { window.VT.highlight(el, terms); });
+    panel.querySelectorAll('.urdu').forEach(function (el) { window.VT.highlight(el, uterms); });
+
+    // romanize the matched (empty) lines so the keyword shows in Roman too
+    var byId = {};
+    panel.querySelectorAll('.roman[data-seg]').forEach(function (el) { byId[el.getAttribute('data-seg')] = el; });
+    var need = data.segments.filter(function (s) { return s.match && byId[s.seg_id] && !s.roman; })
+      .map(function (s) { return String(s.seg_id); });
+    if (need.length) window.VT.romanizeIds(need, byId, function (el) { window.VT.highlight(el, terms); });
+
+    function playAt(t) { if (data.youtube_id && window.VTResultsPlayer) window.VTResultsPlayer.play(data.youtube_id, t, data.title); }
+    panel.querySelectorAll('.ts.seek').forEach(function (a) {
+      a.addEventListener('click', function (e) { e.preventDefault(); playAt(+a.getAttribute('data-t')); });
+    });
+
+    // match navigator inside the panel
+    var matchLines = [].slice.call(panel.querySelectorAll('.line.match'));
+    var countEl = panel.querySelector('.pnav-count');
+    function lineT(li) { var a = li.querySelector('[data-t]'); return a ? +a.getAttribute('data-t') : 0; }
+    var cur = 0, best = Infinity;
+    matchLines.forEach(function (li, i) { var d = Math.abs(lineT(li) - focusT); if (d < best) { best = d; cur = i; } });
+    function go(i, seek) {
+      if (!matchLines.length) { if (countEl) countEl.textContent = 'no exact match here'; return; }
+      cur = (i + matchLines.length) % matchLines.length;
+      matchLines.forEach(function (li) { li.classList.remove('current'); });
+      var li = matchLines[cur]; li.classList.add('current');
+      li.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      if (countEl) countEl.textContent = (cur + 1) + ' / ' + matchLines.length + ' for “' + SEARCH_Q + '”';
+      if (seek) playAt(lineT(li));
+    }
+    panel.querySelector('.pnav-prev').addEventListener('click', function () { go(cur - 1, true); });
+    panel.querySelector('.pnav-next').addEventListener('click', function () { go(cur + 1, true); });
+    go(cur, false);
+  }
+
+  document.querySelectorAll('.act.expand').forEach(function (btn) {
+    btn.addEventListener('click', async function () {
+      var li = btn.closest('.hit');
+      var panel = li.querySelector('.expand-panel');
+      if (panel.dataset.open === '1') {  // toggle closed
+        panel.hidden = true; panel.dataset.open = ''; btn.classList.remove('on'); return;
+      }
+      // one panel at a time
+      document.querySelectorAll('.expand-panel[data-open="1"]').forEach(function (p) { p.hidden = true; p.dataset.open = ''; });
+      document.querySelectorAll('.act.expand.on').forEach(function (b) { b.classList.remove('on'); });
+      btn.classList.add('on'); btn.disabled = true;
+
+      var yt = li.getAttribute('data-yt'), t = +(li.getAttribute('data-t') || 0);
+      var title = li.getAttribute('data-title');
+      if (yt && window.VTResultsPlayer) window.VTResultsPlayer.play(yt, t, title);  // start video
+
+      try {
+        var resp = await fetch('/api/video/' + li.getAttribute('data-video') + '?q=' + encodeURIComponent(SEARCH_Q));
+        var data = await resp.json();
+        renderPanel(panel, data, t);
+        panel.hidden = false; panel.dataset.open = '1';
+        panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      } catch (e) {
+        panel.innerHTML = '<p class="muted">Could not load the transcript — try again.</p>';
+        panel.hidden = false; panel.dataset.open = '1';
+      }
+      btn.disabled = false;
+    });
+  });
 </script>
 {% endif %}
 {% endblock %}
