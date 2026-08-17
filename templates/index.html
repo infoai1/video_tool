@@ -1,9 +1,16 @@
 {% extends "base.html" %}
 {% block content %}
 <form class="search" method="get" action="{{ url_for('index') }}">
-  <input type="search" name="q" value="{{ q|e }}" placeholder="Search in Roman Urdu — e.g. namaz, shukr, tawakkul" autofocus>
+  <input type="search" name="q" value="{{ q|e }}" placeholder="Search Roman Urdu — or paste a YouTube link" autofocus>
   <button type="submit">Search</button>
 </form>
+
+{% if youtube_not_found %}
+  <div class="notice">
+    <p>That YouTube video isn't in the library. Paste a link to a Maulana lecture
+       that has been transcribed, or search by words instead.</p>
+  </div>
+{% endif %}
 
 {% if no_store %}
   <div class="notice">
@@ -35,6 +42,15 @@ python cli.py transliterate</pre>
     <p class="count">No results for “{{ q|e }}”.</p>
   {% endif %}
 {% else %}
-  <p class="hint">Type a word or phrase in Roman Urdu. Spelling doesn't have to be exact — namaz, namaaz and namāz all match.</p>
+  <p class="hint">Type a word or phrase in Roman Urdu — spelling doesn't have to be
+  exact (namaz, namaaz and namāz all match). Or paste a YouTube link to jump
+  straight to that video's transcript.</p>
+{% endif %}
+
+{% if hits %}
+<script>
+  // Results are few, so fill their Roman Urdu automatically.
+  if (window.VT) VT.romanize();
+</script>
 {% endif %}
 {% endblock %}

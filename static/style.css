@@ -92,4 +92,20 @@ pre {
   padding: .6rem .8rem; overflow-x: auto;
 }
 .ext { color: var(--accent); }
+
+.btn {
+  padding: .5rem .9rem; font-size: .95rem; border: 1px solid var(--line);
+  border-radius: 10px; background: var(--accent); color: #fff; cursor: pointer;
+}
+.btn:disabled { opacity: .6; cursor: default; }
+.vtools { display: flex; align-items: center; gap: .75rem; margin: 1rem 0 .25rem; }
+.muted { color: var(--muted); font-size: .9rem; }
+
+.fb { display: flex; flex-direction: column; gap: .8rem; max-width: 520px; }
+.fb label { display: flex; flex-direction: column; gap: .3rem; font-size: .9rem; color: var(--muted); }
+.fb select, .fb textarea, .fb input {
+  padding: .55rem .7rem; font-size: 1rem; border: 1px solid var(--line);
+  border-radius: 10px; background: var(--card); color: var(--fg); font: inherit;
+}
+.fb .btn { align-self: flex-start; }
 .foot { max-width: 780px; margin: 0 auto; padding: 1rem; color: var(--muted); font-size: .85rem; }

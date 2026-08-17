@@ -3,10 +3,14 @@
 Read-only against the store (roman.db). If the store doesn't exist yet, every
 page explains how to build it rather than erroring.
 """
+import datetime
+import json
+
+import config
 import db
 import search
 import transliterate
-from flask import Flask, abort, jsonify, render_template, request
+from flask import Flask, abort, jsonify, redirect, render_template, request, url_for
 
 app = Flask(__name__)
 
@@ -27,14 +31,24 @@ def index():
     if not db.exists():
         return render_template("index.html", q=q, hits=None, no_store=True)
     hits = []
+    youtube_not_found = False
     if q:
         # Writable: search caches the query's Urdu transliteration on first use.
         conn = db.connect()
         try:
-            hits = search.search(conn, q, limit=60)
+            # A pasted YouTube link jumps straight to that video's transcript.
+            if search.youtube_id(q):
+                vid = search.find_video_by_youtube(conn, q)
+                if vid:
+                    return redirect(url_for("video", video_id=vid))
+                youtube_not_found = True
+            else:
+                hits = search.search(conn, q, limit=60)
         finally:
             conn.close()
-    return render_template("index.html", q=q, hits=hits, no_store=False)
+    return render_template(
+        "index.html", q=q, hits=hits, no_store=False, youtube_not_found=youtube_not_found
+    )
 
 
 @app.route("/videos")
@@ -91,6 +105,31 @@ def api_romanize():
     finally:
         conn.close()
     return jsonify({"roman": {str(k): v for k, v in out.items()}})
+
+
+@app.route("/feedback")
+def feedback_page():
+    return render_template("feedback.html", sent=False)
+
+
+@app.route("/api/feedback", methods=["POST"])
+def api_feedback():
+    """Record a feature request or bug report as one JSON line on disk."""
+    data = request.get_json(silent=True) or request.form
+    message = (data.get("message") or "").strip()
+    if not message:
+        return jsonify({"ok": False, "error": "message is required"}), 400
+    record = {
+        "ts": datetime.datetime.utcnow().isoformat() + "Z",
+        "kind": (data.get("kind") or "feedback")[:20],
+        "message": message[:5000],
+        "email": (data.get("email") or "").strip()[:200],
+        "page": (data.get("page") or "")[:300],
+        "ip": request.headers.get("X-Real-IP") or request.remote_addr,
+    }
+    with open(config.FEEDBACK_PATH, "a", encoding="utf-8") as f:
+        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    return jsonify({"ok": True})
 
 
 @app.route("/health")

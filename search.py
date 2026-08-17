@@ -12,8 +12,39 @@ Both fold their side with the shared normaliser (normalize.py) and run a
 prefix-AND FTS query, so "namaz roza" needs both words and partial words match.
 Roman hits are listed first (higher precision); Urdu hits fill in the rest.
 """
+import re
+
 import normalize
 import transliterate
+
+# Pull an 11-char video id out of the common YouTube URL shapes, so a user can
+# paste a link and land on that video's transcript.
+_YT_ID = re.compile(
+    r"(?:v=|/embed/|/live/|/shorts/|/v/|youtu\.be/)([A-Za-z0-9_-]{11})"
+)
+_BARE_ID = re.compile(r"^[A-Za-z0-9_-]{11}$")
+
+
+def youtube_id(text):
+    """The YouTube video id in `text` (a URL or a bare id), or None."""
+    if not text:
+        return None
+    text = text.strip()
+    m = _YT_ID.search(text)
+    if m:
+        return m.group(1)
+    return text if _BARE_ID.match(text) else None
+
+
+def find_video_by_youtube(conn, text):
+    """Local video id for a pasted YouTube URL/id, or None if not in the library."""
+    vid = youtube_id(text)
+    if not vid:
+        return None
+    row = conn.execute(
+        "SELECT id FROM videos WHERE youtube_url LIKE ? LIMIT 1", (f"%{vid}%",)
+    ).fetchone()
+    return row[0] if row else None
 
 
 def youtube_timestamp_url(youtube_url, start_time):

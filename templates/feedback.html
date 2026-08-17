@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Feedback — Roman Urdu Transcripts{% endblock %}
+{% block content %}
+<h1>Feedback</h1>
+<p class="hint">Request a feature or report a bug. If you'd like a reply, leave your email.</p>
+
+<form id="fb-form" class="fb">
+  <label>Type
+    <select name="kind">
+      <option value="bug">Report a bug</option>
+      <option value="feature">Request a feature</option>
+      <option value="other">Other</option>
+    </select>
+  </label>
+  <label>Message
+    <textarea name="message" rows="6" required placeholder="What happened, or what would you like?"></textarea>
+  </label>
+  <label>Your email (optional)
+    <input type="email" name="email" placeholder="you@example.com">
+  </label>
+  <button type="submit" class="btn">Send</button>
+  <span id="fb-status" class="muted"></span>
+</form>
+
+<script>
+  document.getElementById('fb-form').addEventListener('submit', async function (e) {
+    e.preventDefault();
+    var form = e.target;
+    var status = document.getElementById('fb-status');
+    var body = {
+      kind: form.kind.value,
+      message: form.message.value,
+      email: form.email.value,
+      page: document.referrer || location.href,
+    };
+    status.textContent = 'Sending…';
+    try {
+      var r = await fetch('/api/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      var j = await r.json();
+      if (j.ok) {
+        form.reset();
+        status.textContent = 'Thank you — your feedback was recorded.';
+      } else {
+        status.textContent = j.error || 'Could not send. Please try again.';
+      }
+    } catch (err) {
+      status.textContent = 'Could not send. Please try again.';
+    }
+  });
+</script>
+{% endblock %}

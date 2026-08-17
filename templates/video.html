@@ -6,6 +6,10 @@
   <p><a class="ext" href="{{ video.youtube_url }}" target="_blank" rel="noopener">Open on YouTube ↗</a></p>
 {% endif %}
 
+<div class="vtools">
+  <button id="romanize-btn" class="btn" type="button">Show Roman Urdu</button>
+  <span id="romanize-status" class="muted"></span>
+</div>
 <input type="search" id="filter" class="filter" placeholder="Filter this transcript…" oninput="filterLines(this.value)">
 
 <ol class="transcript">
@@ -35,5 +39,29 @@
       li.style.display = (!q || hay.indexOf(q) !== -1) ? '' : 'none';
     });
   }
+
+  // Roman Urdu is produced on demand, so a whole video is transliterated only
+  // when the reader asks for it (and each line is cached after the first time).
+  (function () {
+    var btn = document.getElementById('romanize-btn');
+    var status = document.getElementById('romanize-status');
+    var already = document.querySelectorAll('.roman[data-seg]:not(:empty)').length;
+    var total = document.querySelectorAll('.roman[data-seg]').length;
+    if (already >= total) { btn.style.display = 'none'; return; }  // fully cached
+    btn.addEventListener('click', function () {
+      btn.disabled = true;
+      btn.textContent = 'Romanizing…';
+      window.VT.romanize(function (done, tot, err) {
+        if (err) {
+          status.textContent = 'Could not romanize right now — try again.';
+          btn.disabled = false;
+          btn.textContent = 'Show Roman Urdu';
+          return;
+        }
+        status.textContent = done < tot ? ('Romanizing ' + done + '/' + tot + '…') : 'Done';
+        if (done >= tot) btn.style.display = 'none';
+      });
+    });
+  })();
 </script>
 {% endblock %}

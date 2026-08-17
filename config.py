@@ -44,3 +44,6 @@ MODEL = os.environ.get("VIDEO_TOOL_MODEL", _DEFAULT_MODEL)
 # How many segments to send to the model in one request. Larger batches amortise
 # the fixed prompt overhead; too large and one bad segment stalls the whole call.
 BATCH_SIZE = int(os.environ.get("VIDEO_TOOL_BATCH_SIZE", "25"))
+
+# Where user feedback / bug reports are appended (one JSON object per line).
+FEEDBACK_PATH = os.environ.get("VIDEO_TOOL_FEEDBACK", "feedback.jsonl")
