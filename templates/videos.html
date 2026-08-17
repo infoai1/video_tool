@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Videos — Roman Urdu Transcripts{% endblock %}
+{% block content %}
+<h1>Videos</h1>
+{% if no_store %}
+  <div class="notice">
+    <p>The transcript store hasn't been built yet. Run <code>python cli.py ingest</code> then <code>python cli.py transliterate</code>.</p>
+  </div>
+{% elif videos %}
+  <ul class="vlist">
+    {% for v in videos %}
+    <li>
+      <a href="{{ url_for('video', video_id=v.id) }}">{{ v.title or 'Untitled video' }}</a>
+      <span class="cov">{{ v.done }}/{{ v.segments }} lines</span>
+    </li>
+    {% endfor %}
+  </ul>
+{% else %}
+  <p class="hint">No videos ingested yet.</p>
+{% endif %}
+{% endblock %}

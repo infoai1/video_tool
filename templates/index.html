@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block content %}
+<form class="search" method="get" action="{{ url_for('index') }}">
+  <input type="search" name="q" value="{{ q|e }}" placeholder="Search in Roman Urdu — e.g. namaz, shukr, tawakkul" autofocus>
+  <button type="submit">Search</button>
+</form>
+
+{% if no_store %}
+  <div class="notice">
+    <p>The transcript store hasn't been built yet. Run:</p>
+    <pre>python cli.py ingest
+python cli.py transliterate</pre>
+    <p>(or <code>python scripts/demo_seed.py</code> to load a small sample for a look around).</p>
+  </div>
+{% elif q and hits is not none %}
+  {% if hits %}
+    <p class="count">{{ hits|length }} result{{ '' if hits|length == 1 else 's' }} for “{{ q|e }}”</p>
+    <ul class="hits">
+      {% for h in hits %}
+      <li class="hit">
+        <div class="hit-head">
+          <a class="vtitle" href="{{ url_for('video', video_id=h.video_id) }}">{{ h.video_title or 'Untitled video' }}</a>
+          {% if h.youtube_url %}
+            <a class="ts" href="{{ h.timestamp_url }}" target="_blank" rel="noopener">▶ {{ h.start_time|hhmmss }}</a>
+          {% else %}
+            <span class="ts">{{ h.start_time|hhmmss }}</span>
+          {% endif %}
+        </div>
+        <p class="roman">{{ h.roman_text }}</p>
+        {% if h.urdu_text %}<p class="urdu" dir="rtl">{{ h.urdu_text }}</p>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="count">No results for “{{ q|e }}”.</p>
+  {% endif %}
+{% else %}
+  <p class="hint">Type a word or phrase in Roman Urdu. Spelling doesn't have to be exact — namaz, namaaz and namāz all match.</p>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Roman Urdu Video Transcripts{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="{{ url_for('index') }}">Roman Urdu Transcripts</a>
+    <nav>
+      <a href="{{ url_for('index') }}">Search</a>
+      <a href="{{ url_for('videos') }}">Videos</a>
+    </nav>
+  </header>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+  <footer class="foot">
+    Maulana's video lectures, transcribed and transliterated for search.
+  </footer>
+</body>
+</html>

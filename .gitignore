@@ -1,0 +1,14 @@
+# The tool's own generated store — derived data, never commit it.
+roman.db
+roman.db-shm
+roman.db-wal
+
+# Local env / secrets
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
