@@ -62,6 +62,14 @@ def test_run_is_resumable_and_skips_done(tmp_path):
     assert "a" not in sum(calls[1:], [])
 
 
+def test_parse_tolerates_code_fences_and_prose():
+    fenced = '```json\n{"segments":[{"id":7,"roman":"namaz"}]}\n```'
+    assert transliterate._parse(fenced) == {7: "namaz"}
+    noisy = 'Here you go:\n{"segments":[{"id":1,"roman":"shukr"}]}\nHope that helps.'
+    assert transliterate._parse(noisy) == {1: "shukr"}
+    assert transliterate._parse("no json here") == {}
+
+
 def test_unreturned_id_stays_pending_and_loop_terminates(tmp_path):
     # A segment the model never returns must not be lost, and must not spin the
     # engine forever: it stays pending and run() terminates.

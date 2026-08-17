@@ -14,9 +14,11 @@ The run is:
                 reliable id -> roman mapping instead of parsing prose.
 
 The model call is injectable (`translit_batch`) so the engine can be tested
-without the network or an API key.
+without the network or an API key, and it can be reached through either the
+Anthropic API directly or OpenRouter (see config.PROVIDER).
 """
 import json
+import urllib.request
 
 import config
 import db
@@ -68,18 +70,30 @@ LIMIT ?
 """
 
 
-def _default_translit_batch(batch, model=None):
-    """Call Claude to transliterate one batch.
+def _payload(batch):
+    return {"segments": [{"id": sid, "urdu": urdu} for sid, urdu, _ in batch]}
 
-    `batch` is a list of (id, urdu, title); returns {id: roman}. Imported lazily
-    so the rest of the tool runs without the anthropic package or an API key.
+
+def _parse(text):
+    """Extract {id: roman} from the model's reply, tolerating code fences or
+    stray prose by taking the outermost JSON object."""
+    i, j = text.find("{"), text.rfind("}")
+    if i == -1 or j == -1:
+        return {}
+    data = json.loads(text[i : j + 1])
+    return {int(item["id"]): item["roman"] for item in data.get("segments", [])}
+
+
+def _anthropic_batch(batch, model):
+    """Transliterate one batch via the Anthropic API (structured output).
+
+    Imported lazily so the rest of the tool runs without the anthropic package.
     """
     import anthropic
 
     client = anthropic.Anthropic()
-    payload = {"segments": [{"id": sid, "urdu": urdu} for sid, urdu, _ in batch]}
     resp = client.messages.create(
-        model=model or config.MODEL,
+        model=model,
         max_tokens=8000,
         system=[{"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}}],
         output_config={"format": {"type": "json_schema", "schema": _SCHEMA}},
@@ -87,13 +101,63 @@ def _default_translit_batch(batch, model=None):
             {
                 "role": "user",
                 "content": "Transliterate every segment:\n"
-                + json.dumps(payload, ensure_ascii=False),
+                + json.dumps(_payload(batch), ensure_ascii=False),
             }
         ],
     )
     text = next(b.text for b in resp.content if b.type == "text")
-    data = json.loads(text)
-    return {int(item["id"]): item["roman"] for item in data.get("segments", [])}
+    return _parse(text)
+
+
+def _openrouter_batch(batch, model):
+    """Transliterate one batch via OpenRouter's OpenAI-compatible API.
+
+    Uses only the standard library so the tool takes no extra dependency to run
+    on a box that only has an OpenRouter key.
+    """
+    if not config.OPENROUTER_API_KEY:
+        raise RuntimeError(
+            "OPENROUTER_API_KEY is not set (needed for VIDEO_TOOL_PROVIDER=openrouter)."
+        )
+    body = {
+        "model": model,
+        "messages": [
+            {
+                "role": "system",
+                "content": SYSTEM
+                + '\n\nReturn ONLY JSON of the form '
+                '{"segments":[{"id":<int>,"roman":<string>}]}.',
+            },
+            {
+                "role": "user",
+                "content": "Transliterate every segment:\n"
+                + json.dumps(_payload(batch), ensure_ascii=False),
+            },
+        ],
+        "response_format": {"type": "json_object"},
+        "temperature": 0,
+        "max_tokens": 8000,
+    }
+    req = urllib.request.Request(
+        config.OPENROUTER_URL,
+        data=json.dumps(body).encode(),
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {config.OPENROUTER_API_KEY}",
+            "Content-Type": "application/json",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=120) as r:
+        data = json.load(r)
+    return _parse(data["choices"][0]["message"]["content"])
+
+
+def _default_translit_batch(batch, model=None):
+    """Dispatch one batch to the configured provider. `batch` is (id, urdu, title)."""
+    model = model or config.MODEL
+    if config.PROVIDER == "openrouter":
+        return _openrouter_batch(batch, model)
+    return _anthropic_batch(batch, model)
 
 
 def _write_roman(conn, seg_id, roman, model):

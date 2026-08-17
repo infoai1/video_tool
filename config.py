@@ -16,9 +16,24 @@ SOURCE_DB = os.environ.get(
 # derived data — deleting it and re-running loses nothing that can't be rebuilt.
 DB_PATH = os.environ.get("VIDEO_TOOL_DB", "roman.db")
 
+# How the transliteration model is reached:
+#   "anthropic"  -> the Anthropic SDK / API directly (needs ANTHROPIC_API_KEY)
+#   "openrouter" -> OpenRouter's OpenAI-compatible API (needs OPENROUTER_API_KEY)
+# OpenRouter exists because some deployments (e.g. the CPS box) already have an
+# OpenRouter key and no direct Anthropic key; the same Haiku model is reached
+# either way.
+PROVIDER = os.environ.get("VIDEO_TOOL_PROVIDER", "anthropic").lower()
+
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY") or os.environ.get(
+    "VIDEO_TOOL_OR_KEY", ""
+)
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+
 # Transliteration model. Haiku is deliberately chosen: transliteration is a
-# high-volume, low-reasoning task, and Haiku is the cheapest capable model.
-MODEL = os.environ.get("VIDEO_TOOL_MODEL", "claude-haiku-4-5")
+# high-volume, low-reasoning task, and Haiku is the cheapest capable model. The
+# default id differs per provider (native vs OpenRouter slug).
+_DEFAULT_MODEL = "anthropic/claude-haiku-4.5" if PROVIDER == "openrouter" else "claude-haiku-4-5"
+MODEL = os.environ.get("VIDEO_TOOL_MODEL", _DEFAULT_MODEL)
 
 # How many segments to send to the model in one request. Larger batches amortise
 # the fixed prompt overhead; too large and one bad segment stalls the whole call.
