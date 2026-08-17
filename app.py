@@ -76,6 +76,35 @@ def _hhmmss(seconds):
 app.jinja_env.filters["hhmmss"] = _hhmmss
 
 
+# A few common topics to seed exploration on the empty landing page.
+_SUGGESTED_TOPICS = [
+    "namaz", "roza", "sabr", "dua", "quran", "akhirat",
+    "tawakkul", "dawah", "science", "darwin",
+]
+
+
+def _landing_context():
+    """Data for the welcome/landing page so it feels alive instead of empty:
+    library size, the creator's playlists, and recently romanized videos."""
+    conn = db.connect_ro()
+    try:
+        videos = conn.execute("SELECT COUNT(*) FROM videos").fetchone()[0]
+        segments = conn.execute("SELECT COUNT(*) FROM segments").fetchone()[0]
+        romanized = conn.execute(
+            "SELECT COUNT(*) FROM segments WHERE roman_text IS NOT NULL"
+        ).fetchone()[0]
+        pct = round(100.0 * romanized / segments) if segments else 0
+        tags = library.all_tags(conn)[:12]
+        recent = library.list_romanized(conn, limit=6)
+        saved = conn.execute("SELECT COUNT(*) FROM bookmarks").fetchone()[0]
+    finally:
+        conn.close()
+    return {
+        "videos": videos, "romanized_pct": pct, "saved": saved,
+        "playlists": tags, "recent": recent, "topics": _SUGGESTED_TOPICS,
+    }
+
+
 @app.route("/")
 def index():
     q = (request.args.get("q") or "").strip()
@@ -86,6 +115,7 @@ def index():
     active_job = None
     roman_terms, urdu_terms = [], []
     saved_segments = set()
+    landing = None
     if q:
         # Writable: search caches the query's Urdu transliteration on first use.
         conn = db.connect()
@@ -105,11 +135,13 @@ def index():
                     conn, [h["segment_id"] for h in hits])
         finally:
             conn.close()
+    else:
+        landing = _landing_context()
     return render_template(
         "index.html", q=q, hits=hits, no_store=False,
         youtube_not_found=youtube_not_found, active_job=active_job,
         roman_terms=roman_terms, urdu_terms=urdu_terms,
-        saved_segments=saved_segments,
+        saved_segments=saved_segments, landing=landing,
     )
 
 

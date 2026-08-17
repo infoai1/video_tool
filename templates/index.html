@@ -1,7 +1,72 @@
 {% extends "base.html" %}
 {% block content %}
+{% if landing %}
+<section class="hero">
+  <p class="eyebrow">Maulana Wahiduddin Khan · CPS International</p>
+  <h1 class="hero-title">Search every lecture,<br>in Roman Urdu.</h1>
+  <p class="hero-sub">Type any word or phrase — spelling doesn’t need to be exact
+    (<em>namaz</em>, <em>namaaz</em> and <em>namāz</em> all match). Or paste a
+    YouTube link to open that video’s transcript.</p>
+
+  <form class="search hero-search" method="get" action="{{ url_for('index') }}">
+    <input type="search" name="q" value="" placeholder="Search Roman Urdu — or paste a YouTube link" autofocus>
+    <button type="submit">Search</button>
+  </form>
+
+  {% if landing.topics %}
+  <div class="topic-row">
+    <span class="tr-lbl">Try:</span>
+    {% for t in landing.topics %}
+      <a class="topic" href="{{ url_for('index', q=t) }}">{{ t }}</a>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="hero-stats">
+    <span><strong>{{ "{:,}".format(landing.videos) }}</strong> lectures</span>
+    <span class="dot">·</span>
+    <span><strong>{{ landing.romanized_pct }}%</strong> romanized</span>
+    {% if landing.saved %}<span class="dot">·</span>
+    <span><strong>{{ "{:,}".format(landing.saved) }}</strong> saved</span>{% endif %}
+  </div>
+</section>
+
+{% if landing.playlists %}
+<section class="land-sec">
+  <div class="sec-head">
+    <h2>Your playlists</h2>
+    <a class="see-all" href="{{ url_for('library_page', tab='saved') }}">Open library →</a>
+  </div>
+  <div class="playlists">
+    {% for p in landing.playlists %}
+      <a class="chip" href="{{ url_for('library_page', tab='saved', tag=p.tag) }}"># {{ p.tag }} <span class="c">{{ p.count }}</span></a>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% if landing.recent %}
+<section class="land-sec">
+  <div class="sec-head">
+    <h2>Recently romanized</h2>
+    <a class="see-all" href="{{ url_for('library_page', tab='romanized') }}">See all →</a>
+  </div>
+  <ul class="card-grid">
+    {% for v in landing.recent %}
+    <li class="vcard">
+      <a class="vcard-link" href="{{ url_for('video', video_id=v.id) }}">
+        <span class="vcard-title">{{ v.title or 'Untitled video' }}</span>
+        <span class="vcard-meta">{{ v.done }}/{{ v.total }} lines · {{ (v.last or '')[:10] }}</span>
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+{% else %}{# a query is present, or the store is missing — show compact search + results #}
 <form class="search" method="get" action="{{ url_for('index') }}">
-  <input type="search" name="q" value="{{ q|e }}" placeholder="Search Roman Urdu — or paste a YouTube link" autofocus>
+  <input type="search" name="q" value="{{ q|e }}" placeholder="Search Roman Urdu — or paste a YouTube link"{% if not q %} autofocus{% endif %}>
   <button type="submit">Search</button>
 </form>
 
@@ -115,6 +180,7 @@ python cli.py transliterate</pre>
   exact (namaz, namaaz and namāz all match). Or paste a YouTube link to jump
   straight to that video's transcript.</p>
 {% endif %}
+{% endif %}{# /landing #}
 
 {% if hits %}
 <script>
