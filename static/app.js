@@ -68,8 +68,10 @@
   }
 
   // Romanize a whole video in the background, reporting % via onProgress.
-  // Resolves when done (or immediately if already romanized).
-  async function romanizeVideo(videoId, onProgress) {
+  // onStart (optional) gets the initial job info ({pending, eta_minutes, …})
+  // so the page can show a tentative time. Resolves when done (or immediately
+  // if already romanized).
+  async function romanizeVideo(videoId, onProgress, onStart) {
     var r = await fetch('/api/romanize_video', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ video_id: videoId }),
@@ -77,6 +79,7 @@
     var j = await r.json();
     if (!j.ok) throw new Error(j.error || 'could not start');
     if (j.status === 'done' || !j.job_id) { if (onProgress) onProgress(100); return; }
+    if (onStart) onStart(j);
     var jid = j.job_id;
     return new Promise(function (resolve, reject) {
       (function poll() {
@@ -90,7 +93,26 @@
     });
   }
 
-  window.VT = { romanize: romanize, highlight: highlight, romanizeIds: romanizeIds, romanizeVideo: romanizeVideo };
+  // small shared helpers: browser notifications + programmatic file download
+  function askNotify() {
+    try {
+      if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission();
+    } catch (e) {}
+  }
+  function notify(title, body) {
+    try {
+      if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification(title, body ? { body: body } : undefined);
+      }
+    } catch (e) {}
+  }
+  function download(url) {
+    var a = document.createElement('a');
+    a.href = url; document.body.appendChild(a); a.click(); a.remove();
+  }
+
+  window.VT = { romanize: romanize, highlight: highlight, romanizeIds: romanizeIds,
+                romanizeVideo: romanizeVideo, askNotify: askNotify, notify: notify, download: download };
 })();
 
 // Sticky offsets can't be hard-coded: the top bar wraps to two rows on phones

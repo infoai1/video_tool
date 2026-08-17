@@ -277,13 +277,17 @@ def api_romanize_video():
         pending = sum(1 for s in data["segments"] if s["roman_text"] is None)
         if pending == 0:
             return jsonify({"ok": True, "job_id": None, "status": "done", "progress": 100})
+        # tentative wall-clock: ~25-line batches at roughly 12s per LLM call
+        eta_minutes = max(1, ((pending + 24) // 25 * 12 + 59) // 60)
         active = jobs.active_romanize(conn, int(video_id))
         if active:
-            return jsonify({"ok": True, "job_id": active[0], "status": active[1]})
+            return jsonify({"ok": True, "job_id": active[0], "status": active[1],
+                            "pending": pending, "eta_minutes": eta_minutes})
         job_id = jobs.enqueue_romanize(conn, int(video_id), title=data["title"])
     finally:
         conn.close()
-    return jsonify({"ok": True, "job_id": job_id, "status": "queued", "progress": 0})
+    return jsonify({"ok": True, "job_id": job_id, "status": "queued", "progress": 0,
+                    "pending": pending, "eta_minutes": eta_minutes})
 
 
 @app.route("/api/romanize_all", methods=["POST"])

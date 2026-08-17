@@ -236,7 +236,8 @@ python cli.py transliterate</pre>
         '<a class="muted pfull" target="_blank" rel="noopener" href="/video/' + data.id +
           '?t=' + focusT + '&q=' + encodeURIComponent(SEARCH_Q) + '">full page ↗</a>' +
       '</div>';
-    var head = '<div class="panel-head">' + nav + tools + '</div>';
+    var head = '<div class="panel-head">' + nav + tools +
+      '<span class="panel-status muted" hidden></span></div>';
     var rows = data.segments.map(function (s) {
       var ts = data.youtube_id
         ? '<a class="ts seek" data-t="' + s.t + '" href="#">' + s.ts + '</a>'
@@ -329,19 +330,38 @@ python cli.py transliterate</pre>
     function markDone() { romanized = true; rbtn.textContent = 'Romanized'; rbtn.disabled = true; rbtn.classList.add('done'); }
     if (romanized) markDone();
 
+    var statusEl = panel.querySelector('.panel-status');
+    function setStatus(msg) { if (statusEl) { statusEl.textContent = msg || ''; statusEl.hidden = !msg; } }
+
     // Romanize the whole transcript (background job, % on the button), then fill
     // every line. Shared by the button and by Export.
-    async function ensureRomanized(onPct) {
+    async function ensureRomanized(onPct, onStart) {
       if (romanized) return;
-      await window.VT.romanizeVideo(data.id, onPct);
+      await window.VT.romanizeVideo(data.id, onPct, onStart);
       var e = emptyRomanIds();
       if (e.ids.length) await window.VT.romanizeIds(e.ids, e.byId, function (el) { window.VT.highlight(el, terms); });
       markDone();
     }
     rbtn.addEventListener('click', async function () {
       rbtn.disabled = true;
-      try { await ensureRomanized(function (p) { rbtn.textContent = 'Romanizing ' + Math.round(p) + '%'; }); }
-      catch (e) { rbtn.disabled = false; rbtn.textContent = 'Romanize'; }
+      window.VT.askNotify();
+      try {
+        await ensureRomanized(
+          function (p) { rbtn.textContent = 'Romanizing ' + Math.round(p) + '%'; },
+          function (j) {
+            setStatus('Romanizing this lecture — about ' + (j.eta_minutes || 2) + ' min. ' +
+              'You’ll be notified when it’s ready, and the transcript (.docx with timestamps) ' +
+              'will download automatically. You can keep browsing.');
+          });
+        setStatus('Roman Urdu ready — downloading the transcript…');
+        window.VT.notify('Roman Urdu ready', (data.title || 'Lecture') + ' — transcript downloading.');
+        window.VT.download('/video/' + data.id + '/export.docx?script=' +
+          (expScript ? expScript.value : 'both') + '&timestamps=1');
+        setTimeout(function () { setStatus(''); }, 8000);
+      } catch (e) {
+        setStatus('Could not romanize — try again.');
+        rbtn.disabled = false; rbtn.textContent = 'Romanize';
+      }
     });
 
     // Export .docx — auto-romanizes first when the file needs Roman.
