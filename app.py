@@ -25,6 +25,11 @@ AUTH_ENABLED = bool(config.AUTH_USER and config.AUTH_PASSWORD)
 _OPEN_ENDPOINTS = {"login", "static", "health"}
 
 
+def _eq(a, b):
+    """Constant-time string compare that tolerates non-ASCII (compares bytes)."""
+    return hmac.compare_digest(a.encode("utf-8"), b.encode("utf-8"))
+
+
 @app.before_request
 def _require_login():
     if not AUTH_ENABLED or session.get("user"):
@@ -44,7 +49,9 @@ def login():
     if request.method == "POST":
         u = request.form.get("username", "")
         p = request.form.get("password", "")
-        if hmac.compare_digest(u, config.AUTH_USER) and hmac.compare_digest(p, config.AUTH_PASSWORD):
+        # Compare as bytes: hmac.compare_digest rejects non-ASCII str (the
+        # password may contain characters like ¥ ×).
+        if _eq(u, config.AUTH_USER) and _eq(p, config.AUTH_PASSWORD):
             session["user"] = u
             dest = request.args.get("next") or url_for("index")
             return redirect(dest if dest.startswith("/") else url_for("index"))

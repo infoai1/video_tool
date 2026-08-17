@@ -53,7 +53,9 @@ def test_auth_gate(monkeypatch):
 
     monkeypatch.setattr(appmod, "AUTH_ENABLED", True)
     monkeypatch.setattr(appmod.config, "AUTH_USER", "cpsvideos")
-    monkeypatch.setattr(appmod.config, "AUTH_PASSWORD", "secret")
+    # non-ASCII password must work (regression: hmac.compare_digest rejects
+    # non-ASCII str; we compare bytes).
+    monkeypatch.setattr(appmod.config, "AUTH_PASSWORD", "vfmdyi-#+(/@¥×#2")
     client = appmod.app.test_client()
 
     # protected page redirects to login; API returns 401
@@ -63,6 +65,6 @@ def test_auth_gate(monkeypatch):
     assert client.get("/health").status_code == 200
     # wrong creds rejected, right creds let us in
     assert b"Wrong" in client.post("/login", data={"username": "x", "password": "y"}).data
-    r = client.post("/login", data={"username": "cpsvideos", "password": "secret"})
+    r = client.post("/login", data={"username": "cpsvideos", "password": "vfmdyi-#+(/@¥×#2"})
     assert r.status_code == 302
     assert client.get("/health").status_code == 200
