@@ -70,6 +70,28 @@ def _row_to_hit(row):
     }
 
 
+def video_matches(conn, video_id, q):
+    """Segment ids within one video that match the query (for highlighting and
+    jump-to-match on the transcript page). `conn` must be writable — it resolves
+    (and caches) the query's Urdu transliteration. A segment matches if it
+    contains all Roman query tokens, or all Urdu query tokens."""
+    roman_toks = normalize.query_tokens(q)
+    urdu_toks = normalize.urdu_tokens(_resolve_query_urdu(conn, q, None))
+    if not roman_toks and not urdu_toks:
+        return []
+    out = []
+    for sid, un, rn in conn.execute(
+        "SELECT id, urdu_norm, roman_norm FROM segments WHERE video_id = ? ORDER BY start_time",
+        (video_id,),
+    ):
+        un, rn = un or "", rn or ""
+        if roman_toks and rn and all(t in rn for t in roman_toks):
+            out.append(sid)
+        elif urdu_toks and all(t in un for t in urdu_toks):
+            out.append(sid)
+    return out
+
+
 def query_highlight_terms(conn, q):
     """(roman_terms, urdu_terms) to highlight in results. Roman uses the raw
     query words (so the highlight matches what the user typed); Urdu uses the

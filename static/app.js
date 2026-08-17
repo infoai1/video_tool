@@ -38,5 +38,34 @@
       if (onProgress) onProgress(done, total, false);
     }
   }
-  window.VT = { romanize: romanize };
+  // Wrap occurrences of any term in <mark>. Reads textContent (so it's safe to
+  // re-run) and only rewrites when there's a match.
+  function highlight(el, terms) {
+    if (!el || !terms || !terms.length) return;
+    var txt = el.textContent;
+    if (!txt) return;
+    var re = new RegExp(
+      '(' + terms.map(function (s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }).join('|') + ')',
+      'gi'
+    );
+    if (re.test(txt)) el.innerHTML = txt.replace(re, '<mark>$1</mark>');
+  }
+
+  // Romanize a specific set of segment ids (not the whole page), then run `after`.
+  async function romanizeIds(ids, byId, after) {
+    for (var i = 0; i < ids.length; i += 25) {
+      var chunk = ids.slice(i, i + 25);
+      try {
+        var r = await fetch('/api/romanize', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids: chunk }),
+        });
+        var data = await r.json();
+        var roman = data.roman || {};
+        Object.keys(roman).forEach(function (id) { if (byId[id]) { byId[id].textContent = roman[id] || '—'; if (after) after(byId[id]); } });
+      } catch (e) { return; }
+    }
+  }
+
+  window.VT = { romanize: romanize, highlight: highlight, romanizeIds: romanizeIds };
 })();

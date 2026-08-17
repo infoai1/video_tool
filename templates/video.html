@@ -9,6 +9,21 @@
   <p><a class="ext" href="{{ video.youtube_url }}" target="_blank" rel="noopener">Open on YouTube ↗</a></p>
 {% endif %}
 
+{% if q %}
+<div class="matchbar">
+  <a class="back" href="{{ url_for('index') }}?q={{ q|urlencode }}">← Back to results</a>
+  {% if matched_ids %}
+  <div class="matchnav">
+    <button type="button" id="m-prev" class="icon-btn" aria-label="Previous match">‹</button>
+    <span id="m-count" class="muted"></span>
+    <button type="button" id="m-next" class="icon-btn" aria-label="Next match">›</button>
+  </div>
+  {% else %}
+  <span class="muted">No exact “{{ q|e }}” line found in this video.</span>
+  {% endif %}
+</div>
+{% endif %}
+
 <div class="vtools">
   <div class="seg" id="scriptfilter">
     <button type="button" data-mode="both" class="on">Both</button>
@@ -43,7 +58,7 @@
 
 <ol class="transcript" id="transcript">
   {% for s in video.segments %}
-  <li class="line">
+  <li class="line{% if s.segment_id in matched_ids %} match{% endif %}">
     {% if video.youtube_url %}
       <a class="ts seek" data-t="{{ s.start_time|int }}" href="{{ s.timestamp_url }}"
          target="_blank" rel="noopener">{{ s.start_time|hhmmss }}</a>
@@ -75,6 +90,7 @@
       player = new YT.Player('player', {
         videoId: el.getAttribute('data-yt'),
         playerVars: { rel: 0, start: startAt, autoplay: startAt ? 1 : 0 },
+        events: { onReady: function () { window.VTPlayer = player; } },
       });
     };
   })();
@@ -189,6 +205,51 @@
       var prev = localStorage.getItem('vt-romanize-' + VIDEO_ID);
       if (prev) { btn.disabled = true; btn.textContent = 'Romanizing…'; poll(+prev); }
     } catch (e) {}
+  })();
+
+  // ---- arriving from a search: highlight the term, jump to the match -------
+  (function () {
+    var Q = {{ q|tojson }};
+    if (!Q) return;
+    var ROMAN_TERMS = {{ roman_terms|tojson }};
+    var URDU_TERMS = {{ urdu_terms|tojson }};
+    var MATCHED = {{ matched_ids|tojson }}.map(String);
+    var FOCUS_T = parseInt(new URLSearchParams(location.search).get('t') || '0', 10) || 0;
+
+    // highlight Urdu now, and Roman where it's already present
+    document.querySelectorAll('.transcript .roman').forEach(function (el) { window.VT.highlight(el, ROMAN_TERMS); });
+    document.querySelectorAll('.transcript .urdu').forEach(function (el) { window.VT.highlight(el, URDU_TERMS); });
+
+    // romanize just the matched lines so the keyword shows in Roman too
+    var byId = {};
+    document.querySelectorAll('.roman[data-seg]').forEach(function (el) { byId[el.getAttribute('data-seg')] = el; });
+    var need = MATCHED.filter(function (id) { return byId[id] && !byId[id].textContent.trim(); });
+    if (need.length && window.VT.romanizeIds) {
+      window.VT.romanizeIds(need, byId, function (el) { window.VT.highlight(el, ROMAN_TERMS); });
+    }
+
+    var lines = [].slice.call(document.querySelectorAll('.line.match'));
+    if (!lines.length) return;
+    function lineT(li) { var a = li.querySelector('[data-t]'); return a ? +a.getAttribute('data-t') : 0; }
+
+    // focus the match nearest the timestamp the user clicked
+    var cur = 0, best = Infinity;
+    lines.forEach(function (li, i) { var d = Math.abs(lineT(li) - FOCUS_T); if (d < best) { best = d; cur = i; } });
+
+    function go(i, seek) {
+      cur = (i + lines.length) % lines.length;
+      lines.forEach(function (li) { li.classList.remove('current'); });
+      var li = lines[cur];
+      li.classList.add('current');
+      li.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      var c = document.getElementById('m-count');
+      if (c) c.textContent = (cur + 1) + ' / ' + lines.length + ' for “' + Q + '”';
+      if (seek) { try { if (window.VTPlayer) { window.VTPlayer.seekTo(lineT(li), true); window.VTPlayer.playVideo(); } } catch (e) {} }
+    }
+    var pv = document.getElementById('m-prev'), nx = document.getElementById('m-next');
+    if (pv) pv.addEventListener('click', function () { go(cur - 1, true); });
+    if (nx) nx.addEventListener('click', function () { go(cur + 1, true); });
+    go(cur, false);  // initial focus: player already starts at ?t, just scroll
   })();
 
   // in-page text filter (reads the live Roman text as it fills in)

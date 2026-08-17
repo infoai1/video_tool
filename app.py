@@ -124,14 +124,24 @@ def videos():
 def video(video_id):
     if not db.exists():
         abort(404)
-    conn = db.connect_ro()
+    # When arriving from a search ("Expand"), q highlights the term and jumps to
+    # the match — so a writable connection (query transliteration gets cached).
+    q = (request.args.get("q") or "").strip()
+    conn = db.connect() if q else db.connect_ro()
+    matched_ids, roman_terms, urdu_terms = [], [], []
     try:
         data = search.get_video(conn, video_id)
+        if data is not None and q:
+            matched_ids = search.video_matches(conn, video_id, q)
+            roman_terms, urdu_terms = search.query_highlight_terms(conn, q)
     finally:
         conn.close()
     if data is None:
         abort(404)
-    return render_template("video.html", video=data, youtube_id=search.youtube_id(data["youtube_url"]))
+    return render_template(
+        "video.html", video=data, youtube_id=search.youtube_id(data["youtube_url"]),
+        q=q, matched_ids=matched_ids, roman_terms=roman_terms, urdu_terms=urdu_terms,
+    )
 
 
 @app.route("/video/<int:video_id>/export.docx")

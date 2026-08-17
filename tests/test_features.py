@@ -48,6 +48,23 @@ def test_export_docx_variants(tmp_path):
             assert blob[:2] == b"PK" and len(blob) > 500  # a real .docx (zip) with content
 
 
+def test_video_matches_and_expand_page(tmp_path, monkeypatch):
+    p = str(tmp_path / "roman.db")
+    conn, vid = _seed_video(p)  # lines: "اللہ کا شکر", "نماز اور صبر", "ذکر دل سے"
+    conn.execute("INSERT INTO query_cache (roman_norm, urdu) VALUES ('namaz', 'نماز')")
+    conn.commit()
+    assert len(search.video_matches(conn, vid, "namaz")) == 1  # only the نماز line
+    conn.close()
+
+    import app as appmod
+
+    monkeypatch.setattr(appmod.db.config, "DB_PATH", p)
+    r = appmod.app.test_client().get(f"/video/{vid}?t=10&q=namaz")
+    assert r.status_code == 200
+    body = r.data.decode()
+    assert 'class="line match"' in body and "Back to results" in body and "m-count" in body
+
+
 def test_auth_gate(monkeypatch):
     import app as appmod
 

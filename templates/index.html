@@ -89,8 +89,9 @@ python cli.py transliterate</pre>
             <span class="ico" aria-hidden="true">▶</span> Play
           </button>
           {% endif %}
-          <a class="act ghost" href="{{ url_for('video', video_id=h.video_id) }}?t={{ h.start_time|int }}"
-             target="_blank" rel="noopener" title="Open the full transcript in a new tab">
+          <a class="act ghost"
+             href="{{ url_for('video', video_id=h.video_id) }}?t={{ h.start_time|int }}&q={{ q|urlencode }}"
+             target="_blank" rel="noopener" title="Open the full transcript, jump to this match">
             <span class="ico" aria-hidden="true">⤢</span> Expand
           </a>
         </div>
