@@ -35,6 +35,11 @@ def _yt_cmd(extra):
     cmd = ["yt-dlp"]
     if config.YT_COOKIES and os.path.exists(config.YT_COOKIES):
         cmd += ["--cookies", config.YT_COOKIES]
+    if config.YT_PROXY:
+        cmd += ["--proxy", config.YT_PROXY]
+    if config.YT_POT_BASE_URL:
+        cmd += ["--extractor-args",
+                f"youtubepot-bgutilhttp:base_url={config.YT_POT_BASE_URL}"]
     return cmd + extra
 
 

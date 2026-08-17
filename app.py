@@ -303,6 +303,34 @@ def api_transcribe():
     return jsonify({"ok": True, "job_id": job_id, "status": "queued"})
 
 
+@app.route("/api/upload_cookies", methods=["POST"])
+def api_upload_cookies():
+    """Save an uploaded YouTube cookies.txt to the configured path, so new-video
+    downloads can authenticate — and it can be refreshed the same way when the
+    cookies expire, without server access."""
+    if not config.YT_COOKIES:
+        return jsonify({"ok": False, "error": "Cookie path isn't configured on the server."}), 400
+    f = request.files.get("cookies")
+    raw = f.read() if f else (request.get_data() or b"")
+    try:
+        text = raw.decode("utf-8", "replace")
+    except Exception:
+        text = ""
+    # sanity-check it looks like a Netscape cookie file with YouTube cookies
+    if "youtube.com" not in text or "\t" not in text:
+        return jsonify({"ok": False,
+                        "error": "That doesn't look like a YouTube cookies.txt (Netscape format)."}), 400
+    header = "" if text.lstrip().startswith("# Netscape") else "# Netscape HTTP Cookie File\n"
+    try:
+        with open(config.YT_COOKIES, "w", encoding="utf-8") as out:
+            out.write(header + text)
+        os.chmod(config.YT_COOKIES, 0o600)
+    except OSError as e:
+        return jsonify({"ok": False, "error": f"Could not save: {e}"}), 500
+    n_yt = sum(1 for ln in text.splitlines() if "youtube.com" in ln and not ln.startswith("#"))
+    return jsonify({"ok": True, "youtube_cookies": n_yt})
+
+
 @app.route("/api/sync_channel", methods=["POST"])
 def api_sync_channel():
     """Scan a YouTube channel (or playlist) and queue transcription for every

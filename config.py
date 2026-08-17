@@ -56,6 +56,13 @@ SONIOX_URL = "https://api.soniox.com/v1"
 # a logged-in browser. Point this at that file; without it, download fails with
 # a clear message. See README.
 YT_COOKIES = os.environ.get("VIDEO_TOOL_YT_COOKIES", "")
+# Optional outbound proxy for yt-dlp. YouTube bot-blocks datacenter IPs even
+# with cookies; routing through a residential/mobile proxy is the reliable fix.
+# e.g. "http://user:pass@host:port" or "socks5://host:port". Empty = direct.
+YT_PROXY = os.environ.get("VIDEO_TOOL_YT_PROXY", "")
+# Optional PO-token provider (bgutil) base URL, used to satisfy YouTube's
+# proof-of-origin checks. Empty = don't pass one.
+YT_POT_BASE_URL = os.environ.get("VIDEO_TOOL_YT_POT_URL", "")
 # Rough target length of a transcript segment, in seconds.
 SEGMENT_SECONDS = float(os.environ.get("VIDEO_TOOL_SEGMENT_SECONDS", "18"))
 # How many of a channel's newest uploads to scan when syncing (newest first).

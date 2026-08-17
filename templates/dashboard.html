@@ -13,12 +13,47 @@
   </div>
 
   <div class="sync-card">
+    <h2>YouTube sign-in (cookies)</h2>
+    <p class="muted">Downloading from YouTube needs a <code>cookies.txt</code> exported from a
+      logged-in browser (extension: “Get cookies.txt LOCALLY”). Upload it here — refresh it
+      the same way when it expires.</p>
+    <div class="sync-row">
+      <input type="file" id="ck-file" accept=".txt,text/plain">
+      <button id="ck-btn" class="btn" type="button">Upload cookies</button>
+    </div>
+    <p id="ck-status" class="muted {{ '' if yt_ready else 'sync-warn' }}"
+       {% if yt_ready %}style="color:var(--accent)"{% endif %}>
+      {{ 'Cookies are installed ✓' if yt_ready else 'No cookies uploaded yet.' }}
+    </p>
+  </div>
+  <script>
+    (function () {
+      var btn = document.getElementById('ck-btn'), file = document.getElementById('ck-file'),
+          st = document.getElementById('ck-status');
+      if (!btn) return;
+      btn.addEventListener('click', async function () {
+        if (!file.files || !file.files[0]) { st.textContent = 'Choose your cookies.txt first.'; return; }
+        btn.disabled = true; st.textContent = 'Uploading…';
+        var fd = new FormData(); fd.append('cookies', file.files[0]);
+        try {
+          var r = await fetch('/api/upload_cookies', { method: 'POST', body: fd });
+          var j = await r.json();
+          st.className = 'muted';
+          if (j.ok) { st.style.color = 'var(--accent)'; st.textContent = 'Cookies installed ✓ (' + j.youtube_cookies + ' YouTube cookies). New-video downloads can authenticate now.'; }
+          else { st.className = 'muted sync-warn'; st.textContent = j.error || 'Upload failed.'; }
+        } catch (e) { st.className = 'muted sync-warn'; st.textContent = 'Upload failed — try again.'; }
+        btn.disabled = false;
+      });
+    })();
+  </script>
+
+  <div class="sync-card">
     <h2>Add new videos from the channel</h2>
     <p class="muted">Paste the channel’s (or a playlist’s) YouTube link. It finds every upload,
       skips the ones already here, and queues transcription for just the new ones.</p>
     {% if not yt_ready %}
-    <p class="sync-warn">⚠ YouTube downloads need a <code>youtube_cookies.txt</code> on the server first —
-      until that’s added, queued videos will fail with an authentication error.</p>
+    <p class="sync-warn">⚠ Upload your YouTube cookies above first — until then, queued videos
+      fail with an authentication error.</p>
     {% endif %}
     <div class="sync-row">
       <input type="url" id="sync-url" placeholder="https://www.youtube.com/@CPSGlobal/videos">
