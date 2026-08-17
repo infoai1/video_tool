@@ -1,3 +1,5 @@
+import json
+
 import db
 import transliterate
 
@@ -68,6 +70,21 @@ def test_parse_tolerates_code_fences_and_prose():
     noisy = 'Here you go:\n{"segments":[{"id":1,"roman":"shukr"}]}\nHope that helps.'
     assert transliterate._parse(noisy) == {1: "shukr"}
     assert transliterate._parse("no json here") == {}
+
+
+def test_claude_cli_batch_parses_envelope(monkeypatch):
+    # The CLI returns a JSON envelope whose `result` holds the (possibly fenced)
+    # assistant text; _claude_cli_batch must unwrap and parse it.
+    class FakeProc:
+        returncode = 0
+        stderr = ""
+        stdout = json.dumps(
+            {"is_error": False, "result": '```json\n{"segments":[{"id":5,"roman":"sabr"}]}\n```'}
+        )
+
+    monkeypatch.setattr(transliterate.subprocess, "run", lambda *a, **k: FakeProc())
+    out = transliterate._claude_cli_batch([(5, "urdu", "title")], "claude-haiku-4-5")
+    assert out == {5: "sabr"}
 
 
 def test_unreturned_id_stays_pending_and_loop_terminates(tmp_path):

@@ -18,11 +18,20 @@ without the network or an API key, and it can be reached through either the
 Anthropic API directly or OpenRouter (see config.PROVIDER).
 """
 import json
+import subprocess
 import urllib.request
 
 import config
 import db
 import normalize
+
+# The JSON-shape instruction appended for providers that don't take a schema
+# (OpenRouter, the claude CLI). The Anthropic SDK path enforces it via _SCHEMA.
+_JSON_INSTRUCTION = (
+    '\n\nReturn ONLY JSON of the form '
+    '{"segments":[{"id":<int>,"roman":<string>}]}, one entry per input id. '
+    "No preamble, no explanation."
+)
 
 # Stable across every request, so it caches. Kept factual and specific: the
 # model's job is transliteration (script conversion), NOT translation.
@@ -74,6 +83,10 @@ def _payload(batch):
     return {"segments": [{"id": sid, "urdu": urdu} for sid, urdu, _ in batch]}
 
 
+def _user_content(batch):
+    return "Transliterate every segment:\n" + json.dumps(_payload(batch), ensure_ascii=False)
+
+
 def _parse(text):
     """Extract {id: roman} from the model's reply, tolerating code fences or
     stray prose by taking the outermost JSON object."""
@@ -97,16 +110,33 @@ def _anthropic_batch(batch, model):
         max_tokens=8000,
         system=[{"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}}],
         output_config={"format": {"type": "json_schema", "schema": _SCHEMA}},
-        messages=[
-            {
-                "role": "user",
-                "content": "Transliterate every segment:\n"
-                + json.dumps(_payload(batch), ensure_ascii=False),
-            }
-        ],
+        messages=[{"role": "user", "content": _user_content(batch)}],
     )
     text = next(b.text for b in resp.content if b.type == "text")
     return _parse(text)
+
+
+def _claude_cli_batch(batch, model):
+    """Transliterate one batch via the authenticated `claude` CLI (Claude Code).
+
+    Uses the box's Claude subscription — no API key, and calls are covered by
+    the plan rather than billed per token. The CLI returns a JSON envelope whose
+    `result` field holds the assistant text; we parse our JSON out of that.
+    """
+    proc = subprocess.run(
+        [config.CLAUDE_BIN, "-p", "--model", model,
+         "--output-format", "json", "--append-system-prompt", SYSTEM + _JSON_INSTRUCTION],
+        input=_user_content(batch),
+        capture_output=True,
+        text=True,
+        timeout=config.CLI_TIMEOUT,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(f"claude CLI exited {proc.returncode}: {proc.stderr[:300]}")
+    envelope = json.loads(proc.stdout)
+    if envelope.get("is_error"):
+        raise RuntimeError(f"claude CLI error: {str(envelope)[:300]}")
+    return _parse(envelope.get("result", ""))
 
 
 def _openrouter_batch(batch, model):
@@ -122,17 +152,8 @@ def _openrouter_batch(batch, model):
     body = {
         "model": model,
         "messages": [
-            {
-                "role": "system",
-                "content": SYSTEM
-                + '\n\nReturn ONLY JSON of the form '
-                '{"segments":[{"id":<int>,"roman":<string>}]}.',
-            },
-            {
-                "role": "user",
-                "content": "Transliterate every segment:\n"
-                + json.dumps(_payload(batch), ensure_ascii=False),
-            },
+            {"role": "system", "content": SYSTEM + _JSON_INSTRUCTION},
+            {"role": "user", "content": _user_content(batch)},
         ],
         "response_format": {"type": "json_object"},
         "temperature": 0,
@@ -157,6 +178,8 @@ def _default_translit_batch(batch, model=None):
     model = model or config.MODEL
     if config.PROVIDER == "openrouter":
         return _openrouter_batch(batch, model)
+    if config.PROVIDER in ("claude_cli", "subscription"):
+        return _claude_cli_batch(batch, model)
     return _anthropic_batch(batch, model)
 
 

@@ -56,14 +56,18 @@ Configuration (all via env, see `.env.example`):
 
 - `VIDEO_TOOL_SOURCE_DB` — path to `annotation.db` (default is the Hetzner path).
 - `VIDEO_TOOL_DB` — where to keep `roman.db` (default `roman.db`).
-- `VIDEO_TOOL_PROVIDER` — `anthropic` (default) or `openrouter`.
-- `ANTHROPIC_API_KEY` (anthropic) **or** `OPENROUTER_API_KEY` (openrouter).
+- `VIDEO_TOOL_PROVIDER` — how the model is reached:
+  - `claude_cli` — the authenticated `claude` CLI (Claude **subscription**);
+    transliteration is covered by the plan, no API key. Recommended where the
+    CLI is logged in (e.g. the CPS box).
+  - `anthropic` — Anthropic API directly (needs `ANTHROPIC_API_KEY`).
+  - `openrouter` — OpenRouter API (needs `OPENROUTER_API_KEY`).
 - `VIDEO_TOOL_MODEL` — leave unset to get Haiku for the chosen provider
-  (`claude-haiku-4-5` natively, `anthropic/claude-haiku-4.5` via OpenRouter).
+  (`claude-haiku-4-5` natively / via the CLI, `anthropic/claude-haiku-4.5` on
+  OpenRouter).
 
-The OpenRouter path exists for deployments (like the CPS box) that have an
-OpenRouter key but no direct Anthropic key — the same Haiku model, either way,
-and no extra Python dependency (it uses the standard library).
+All three reach the same Haiku model and need no extra Python dependency
+(`claude_cli` shells out to the CLI; `openrouter` uses the standard library).
 
 ## Try it without the source DB or an API key
 
