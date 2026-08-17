@@ -98,6 +98,41 @@ def test_video_matches_and_expand_page(tmp_path, monkeypatch):
     assert 'class="line match"' in body and "Back to results" in body and "m-count" in body
 
 
+def test_library_saves_tags_and_tabs(tmp_path, monkeypatch):
+    import library
+
+    p = str(tmp_path / "roman.db")
+    conn, vid = _seed_video(p)
+    conn.execute("UPDATE segments SET roman_text='r', roman_at='2026-08-17T10:00:00Z'")
+    conn.commit()
+    seg = conn.execute("SELECT id FROM segments ORDER BY start_time").fetchall()[1][0]
+
+    # whole-video save toggles; a re-toggle removes it
+    assert library.toggle_video(conn, vid, tags=["Darwin"])["saved"] is True
+    assert library.toggle_video(conn, vid)["saved"] is False
+    library.toggle_video(conn, vid, tags=["darwin"])
+    library.toggle_segment(conn, vid, seg, start_time=10.0, tags=["darwin"])
+
+    st = library.saved_state(conn, vid)
+    assert st["video"] is True and seg in st["segments"]
+    assert len(library.list_saved(conn, tag="darwin")) == 2   # video + segment
+    assert library.list_romanized(conn, q="V")[0]["done"] == 3
+    assert {e["kind"] for e in library.history(conn)} >= {"save", "romanize"}
+    conn.close()
+
+    import app as appmod
+    monkeypatch.setattr(appmod.db.config, "DB_PATH", p)
+    c = appmod.app.test_client()
+    # segment save endpoint toggles, tag endpoint sticks
+    assert c.post("/api/save/segment", json={"video_id": vid, "segment_id": seg}).get_json()["saved"] is False
+    j = c.post("/api/save/segment", json={"video_id": vid, "segment_id": seg}).get_json()
+    assert j["saved"] is True
+    assert c.post(f"/api/bookmark/{j['bookmark_id']}/tag", json={"tag": "science"}).get_json()["ok"]
+    for tab in ("saved", "romanized", "history"):
+        assert c.get(f"/library?tab={tab}").status_code == 200
+    assert b"science" in c.get("/library?tab=saved").data
+
+
 def test_auth_gate(monkeypatch):
     import app as appmod
 

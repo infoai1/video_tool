@@ -79,6 +79,28 @@ CREATE TABLE IF NOT EXISTS query_cache (
     roman_norm TEXT PRIMARY KEY,
     urdu       TEXT
 );
+
+-- Creator's saved items. segment_id NULL = the whole video is saved; a non-NULL
+-- segment_id = a bookmark on one line (start_time snapshotted so it can be
+-- jumped to and displayed even standalone). Tags group saves into "playlists".
+CREATE TABLE IF NOT EXISTS bookmarks (
+    id          INTEGER PRIMARY KEY,
+    video_id    INTEGER NOT NULL REFERENCES videos(id),
+    segment_id  INTEGER,          -- NULL = whole-video save; else a line bookmark
+    start_time  REAL,             -- snapshot of the segment's time (for jump/label)
+    note        TEXT,
+    created_at  TEXT
+);
+-- At most one whole-video save per video, and one bookmark per (video, segment).
+CREATE UNIQUE INDEX IF NOT EXISTS idx_bm_video ON bookmarks(video_id) WHERE segment_id IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_bm_seg   ON bookmarks(video_id, segment_id) WHERE segment_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS bookmark_tags (
+    bookmark_id INTEGER NOT NULL REFERENCES bookmarks(id) ON DELETE CASCADE,
+    tag         TEXT NOT NULL,
+    PRIMARY KEY (bookmark_id, tag)
+);
+CREATE INDEX IF NOT EXISTS idx_bmtag_tag ON bookmark_tags(tag);
 """
 
 

@@ -11,6 +11,7 @@ import config
 import db
 import export
 import jobs
+import library
 import search
 import transliterate
 from flask import (Flask, abort, jsonify, redirect, render_template, request,
@@ -84,6 +85,7 @@ def index():
     youtube_not_found = False
     active_job = None
     roman_terms, urdu_terms = [], []
+    saved_segments = set()
     if q:
         # Writable: search caches the query's Urdu transliteration on first use.
         conn = db.connect()
@@ -99,12 +101,15 @@ def index():
             else:
                 hits = search.search(conn, q, limit=60)
                 roman_terms, urdu_terms = search.query_highlight_terms(conn, q)
+                saved_segments = library.saved_segment_set(
+                    conn, [h["segment_id"] for h in hits])
         finally:
             conn.close()
     return render_template(
         "index.html", q=q, hits=hits, no_store=False,
         youtube_not_found=youtube_not_found, active_job=active_job,
         roman_terms=roman_terms, urdu_terms=urdu_terms,
+        saved_segments=saved_segments,
     )
 
 
@@ -127,13 +132,16 @@ def video(video_id):
     # When arriving from a search ("Expand"), q highlights the term and jumps to
     # the match — so a writable connection (query transliteration gets cached).
     q = (request.args.get("q") or "").strip()
-    conn = db.connect() if q else db.connect_ro()
+    conn = db.connect()  # writable: caches query transliteration + reads saved-state
     matched_ids, roman_terms, urdu_terms = [], [], []
+    saved = {"video": False, "segments": []}
     try:
         data = search.get_video(conn, video_id)
-        if data is not None and q:
-            matched_ids = search.video_matches(conn, video_id, q)
-            roman_terms, urdu_terms = search.query_highlight_terms(conn, q)
+        if data is not None:
+            saved = library.saved_state(conn, video_id)
+            if q:
+                matched_ids = search.video_matches(conn, video_id, q)
+                roman_terms, urdu_terms = search.query_highlight_terms(conn, q)
     finally:
         conn.close()
     if data is None:
@@ -141,6 +149,7 @@ def video(video_id):
     return render_template(
         "video.html", video=data, youtube_id=search.youtube_id(data["youtube_url"]),
         q=q, matched_ids=matched_ids, roman_terms=roman_terms, urdu_terms=urdu_terms,
+        saved_video=saved["video"], saved_segments=set(saved["segments"]),
     )
 
 
@@ -402,6 +411,104 @@ def api_feedback():
     }
     with open(config.FEEDBACK_PATH, "a", encoding="utf-8") as f:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    return jsonify({"ok": True})
+
+
+@app.route("/library")
+def library_page():
+    """The creator's library: Saved (with tag playlists), Romanized, and History.
+    One page, three tabs; each is searchable and date-filterable."""
+    if not db.exists():
+        return render_template("library.html", no_store=True)
+    tab = request.args.get("tab", "saved")
+    if tab not in ("saved", "romanized", "history"):
+        tab = "saved"
+    q = (request.args.get("q") or "").strip()
+    tag = (request.args.get("tag") or "").strip()
+    date_from = (request.args.get("from") or "").strip()
+    date_to = (request.args.get("to") or "").strip()
+    conn = db.connect()
+    try:
+        ctx = {
+            "tab": tab, "q": q, "tag": tag, "date_from": date_from, "date_to": date_to,
+            "tags": library.all_tags(conn), "counts": library.counts(conn),
+            "saved": [], "romanized": [], "history": [],
+        }
+        if tab == "saved":
+            ctx["saved"] = library.list_saved(conn, tag=tag or None, q=q or None,
+                                              date_from=date_from or None, date_to=date_to or None)
+        elif tab == "romanized":
+            ctx["romanized"] = library.list_romanized(conn, q=q or None,
+                                                      date_from=date_from or None, date_to=date_to or None)
+        else:
+            ctx["history"] = library.history(conn, q=q or None,
+                                            date_from=date_from or None, date_to=date_to or None)
+    finally:
+        conn.close()
+    return render_template("library.html", no_store=False, **ctx)
+
+
+@app.route("/api/save/video", methods=["POST"])
+def api_save_video():
+    if not db.exists():
+        return jsonify({"ok": False, "error": "store not built yet"}), 503
+    d = request.get_json(silent=True) or {}
+    video_id = d.get("video_id")
+    if not video_id:
+        return jsonify({"ok": False, "error": "video_id required"}), 400
+    conn = db.connect()
+    try:
+        res = library.toggle_video(conn, int(video_id), tags=d.get("tags"))
+    finally:
+        conn.close()
+    return jsonify({"ok": True, **res})
+
+
+@app.route("/api/save/segment", methods=["POST"])
+def api_save_segment():
+    if not db.exists():
+        return jsonify({"ok": False, "error": "store not built yet"}), 503
+    d = request.get_json(silent=True) or {}
+    video_id, segment_id = d.get("video_id"), d.get("segment_id")
+    if not video_id or not segment_id:
+        return jsonify({"ok": False, "error": "video_id and segment_id required"}), 400
+    conn = db.connect()
+    try:
+        res = library.toggle_segment(conn, int(video_id), int(segment_id),
+                                     start_time=d.get("start_time"), tags=d.get("tags"))
+    finally:
+        conn.close()
+    return jsonify({"ok": True, **res})
+
+
+@app.route("/api/bookmark/<int:bookmark_id>", methods=["DELETE"])
+def api_bookmark_delete(bookmark_id):
+    if not db.exists():
+        return jsonify({"ok": False, "error": "store not built yet"}), 503
+    conn = db.connect()
+    try:
+        library.delete(conn, bookmark_id)
+    finally:
+        conn.close()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/bookmark/<int:bookmark_id>/tag", methods=["POST", "DELETE"])
+def api_bookmark_tag(bookmark_id):
+    if not db.exists():
+        return jsonify({"ok": False, "error": "store not built yet"}), 503
+    d = request.get_json(silent=True) or {}
+    tag = (d.get("tag") or "").strip()
+    if not tag:
+        return jsonify({"ok": False, "error": "tag required"}), 400
+    conn = db.connect()
+    try:
+        if request.method == "DELETE":
+            library.remove_tag(conn, bookmark_id, tag)
+        else:
+            library.add_tag(conn, bookmark_id, tag)
+    finally:
+        conn.close()
     return jsonify({"ok": True})
 
 

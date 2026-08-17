@@ -96,6 +96,11 @@ python cli.py transliterate</pre>
                     title="Open the full transcript here, jump to this match">
               <span class="ico" aria-hidden="true">⤢</span> Expand
             </button>
+            <button type="button" class="act ghost hit-save{% if h.segment_id in saved_segments %} on{% endif %}"
+                    data-video="{{ h.video_id }}" data-seg="{{ h.segment_id }}" data-t="{{ h.start_time|int }}"
+                    title="Save this snippet to your library">
+              <span class="ico star" aria-hidden="true">{{ '★' if h.segment_id in saved_segments else '☆' }}</span> Save
+            </button>
           </div>
         </div>
         <div class="expand-panel" hidden></div>
@@ -388,6 +393,21 @@ python cli.py transliterate</pre>
       }
     });
   }
+
+  // ---- save a search snippet to the library --------------------------------
+  document.querySelectorAll('.act.hit-save').forEach(function (btn) {
+    btn.addEventListener('click', async function () {
+      btn.disabled = true;
+      try {
+        var res = await window.VT.saveSegment(
+          +btn.getAttribute('data-video'), +btn.getAttribute('data-seg'), +btn.getAttribute('data-t'));
+        var on = !!res.saved;
+        btn.classList.toggle('on', on);
+        btn.querySelector('.star').textContent = on ? '★' : '☆';
+      } catch (e) {}
+      btn.disabled = false;
+    });
+  });
 
   document.querySelectorAll('.act.expand').forEach(function (btn) {
     btn.addEventListener('click', async function () {

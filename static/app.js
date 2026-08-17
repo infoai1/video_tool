@@ -111,8 +111,26 @@
     a.href = url; document.body.appendChild(a); a.click(); a.remove();
   }
 
+  // Save / bookmark. Toggle a whole video or a single segment; resolves with the
+  // new saved state {saved: bool, bookmark_id}.
+  async function saveVideo(videoId, tags) {
+    var r = await fetch('/api/save/video', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ video_id: videoId, tags: tags || undefined }),
+    });
+    return r.json();
+  }
+  async function saveSegment(videoId, segmentId, startTime, tags) {
+    var r = await fetch('/api/save/segment', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ video_id: videoId, segment_id: segmentId, start_time: startTime, tags: tags || undefined }),
+    });
+    return r.json();
+  }
+
   window.VT = { romanize: romanize, highlight: highlight, romanizeIds: romanizeIds,
-                romanizeVideo: romanizeVideo, askNotify: askNotify, notify: notify, download: download };
+                romanizeVideo: romanizeVideo, askNotify: askNotify, notify: notify, download: download,
+                saveVideo: saveVideo, saveSegment: saveSegment };
 })();
 
 // Sticky offsets can't be hard-coded: the top bar wraps to two rows on phones

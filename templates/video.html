@@ -36,6 +36,11 @@
 
     <button id="romanize-btn" class="btn" type="button">Show Roman Urdu</button>
 
+    <button id="save-video" class="btn ghost star-btn {{ 'on' if saved_video }}" type="button"
+            data-video="{{ video.id }}" title="Save this video to your library">
+      <span class="star">{{ '★' if saved_video else '☆' }}</span> <span class="lbl">{{ 'Saved' if saved_video else 'Save' }}</span>
+    </button>
+
     <details class="export">
       <summary class="btn">Export .docx</summary>
       <div class="export-menu">
@@ -77,6 +82,9 @@
       <span class="roman" data-seg="{{ s.segment_id }}">{{ s.roman_text or '' }}</span>
       {% if s.urdu_text %}<span class="urdu" dir="rtl">{{ s.urdu_text }}</span>{% endif %}
     </span>
+    <button type="button" class="line-star{% if s.segment_id in saved_segments %} on{% endif %}"
+            data-seg="{{ s.segment_id }}" data-t="{{ s.start_time|int }}"
+            title="Bookmark this line" aria-label="Bookmark this line">{{ '★' if s.segment_id in saved_segments else '☆' }}</button>
   </li>
   {% endfor %}
 </ol>
@@ -329,6 +337,37 @@
     var top = window.pageYOffset + rect.top - (pin + 14);
     window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
   }
+
+  // ---- save / bookmark -----------------------------------------------------
+  (function () {
+    var sv = document.getElementById('save-video');
+    if (sv) sv.addEventListener('click', async function () {
+      sv.disabled = true;
+      try {
+        var res = await window.VT.saveVideo(VIDEO_ID);
+        var on = !!res.saved;
+        sv.classList.toggle('on', on);
+        sv.querySelector('.star').textContent = on ? '★' : '☆';
+        sv.querySelector('.lbl').textContent = on ? 'Saved' : 'Save';
+      } catch (e) {}
+      sv.disabled = false;
+    });
+
+    document.querySelectorAll('.line-star').forEach(function (star) {
+      star.addEventListener('click', async function (e) {
+        e.stopPropagation();  // don't also seek/play the line
+        star.disabled = true;
+        try {
+          var res = await window.VT.saveSegment(
+            VIDEO_ID, +star.getAttribute('data-seg'), +star.getAttribute('data-t'));
+          var on = !!res.saved;
+          star.classList.toggle('on', on);
+          star.textContent = on ? '★' : '☆';
+        } catch (err) {}
+        star.disabled = false;
+      });
+    });
+  })();
 
   // in-page text filter (reads the live Roman text as it fills in)
   function filterLines(q) {
