@@ -121,6 +121,33 @@ Set the on-demand model with `VIDEO_TOOL_PROVIDER` + `VIDEO_TOOL_MODEL` (see
 below). The `/api/romanize` endpoint caps work per request and the frontend
 requests Roman in small chunks, so pages stay responsive.
 
+## New videos: transcribe on demand (Soniox)
+
+Paste a YouTube link for a video that **isn't** in the library and the search
+page offers **Transcribe this video with Soniox**. That enqueues a job; a
+background worker (`worker.py`) downloads the audio with `yt-dlp`, transcribes it
+with Soniox (Urdu, with word timestamps), splits it into timestamped segments,
+and adds it as a new video (`source='soniox'`) — after which it's searchable and
+browsable like any other, Roman on demand.
+
+Runs as two services: the web app and the worker.
+
+```bash
+SONIOX_API_KEY=...  python worker.py     # processes queued transcription jobs
+```
+
+> **YouTube needs a cookies file.** Datacenter IPs are bot-blocked, so `yt-dlp`
+> can't download without authentication. Export a `cookies.txt` from a logged-in
+> browser and set `VIDEO_TOOL_YT_COOKIES=/path/to/cookies.txt`. Without it,
+> transcription jobs fail with that exact message — visible on the dashboard.
+
+## Dashboard
+
+`/dashboard` shows usage at a glance: how many videos and segments, how many were
+**transcribed here via Soniox**, what % is **romanized**, the recent
+transcription **jobs** (with status/errors), and the **recently romanized
+videos**. So new transcriptions and on-demand romanization are both visible.
+
 ## Tests
 
 ```bash

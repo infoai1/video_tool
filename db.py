@@ -27,9 +27,11 @@ import config
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS videos (
     id              INTEGER PRIMARY KEY,
-    source_video_id INTEGER UNIQUE,   -- id in the source annotation.db
+    source_video_id INTEGER UNIQUE,   -- id in the source annotation.db (NULL if transcribed here)
     youtube_url     TEXT,
-    title           TEXT
+    title           TEXT,
+    source          TEXT DEFAULT 'annotation',  -- 'annotation' | 'soniox'
+    added_at        TEXT
 );
 
 CREATE TABLE IF NOT EXISTS segments (
@@ -41,8 +43,22 @@ CREATE TABLE IF NOT EXISTS segments (
     roman_text  TEXT,                 -- Roman Urdu, NULL until transliterated
     roman_norm  TEXT,                 -- normalised roman_text, for search
     model       TEXT,                 -- which model produced roman_text
+    roman_at    TEXT,                 -- when roman_text was produced (for the dashboard)
     created_at  TEXT,
     UNIQUE (video_id, start_time)     -- makes ingest idempotent / resumable
+);
+
+-- Background jobs (currently: transcribe a new YouTube video via Soniox). The
+-- web app enqueues; a separate worker processes. Powers the dashboard.
+CREATE TABLE IF NOT EXISTS jobs (
+    id          INTEGER PRIMARY KEY,
+    kind        TEXT NOT NULL,        -- 'transcribe'
+    youtube_url TEXT,
+    title       TEXT,
+    status      TEXT NOT NULL,        -- queued | running | done | error
+    detail      TEXT,                 -- progress note or error message
+    created_at  TEXT,
+    updated_at  TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_segments_video ON segments(video_id);
@@ -81,11 +97,29 @@ def connect_ro(path=None):
     return conn
 
 
+# Columns added after the first release; ADDed to stores that predate them so an
+# existing roman.db upgrades in place instead of needing a rebuild.
+_MIGRATIONS = [
+    ("videos", "source", "TEXT DEFAULT 'annotation'"),
+    ("videos", "added_at", "TEXT"),
+    ("segments", "roman_at", "TEXT"),
+]
+
+
+def _migrate(conn):
+    for table, column, decl in _MIGRATIONS:
+        cols = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
+        if column not in cols:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+
+
 def init_db(path=None):
-    """Create the schema if it does not exist. Safe to call repeatedly."""
+    """Create the schema if it does not exist, and migrate an older store in
+    place. Safe to call repeatedly."""
     conn = connect(path)
     try:
         conn.executescript(SCHEMA)
+        _migrate(conn)
         conn.commit()
     finally:
         conn.close()

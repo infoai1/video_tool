@@ -47,3 +47,13 @@ BATCH_SIZE = int(os.environ.get("VIDEO_TOOL_BATCH_SIZE", "25"))
 
 # Where user feedback / bug reports are appended (one JSON object per line).
 FEEDBACK_PATH = os.environ.get("VIDEO_TOOL_FEEDBACK", "feedback.jsonl")
+
+# Transcription of a new YouTube video (not yet in the library) via Soniox ASR.
+SONIOX_API_KEY = os.environ.get("SONIOX_API_KEY", "")
+SONIOX_URL = "https://api.soniox.com/v1"
+# YouTube bot-blocks datacenter IPs, so yt-dlp needs a cookies.txt exported from
+# a logged-in browser. Point this at that file; without it, download fails with
+# a clear message. See README.
+YT_COOKIES = os.environ.get("VIDEO_TOOL_YT_COOKIES", "")
+# Rough target length of a transcript segment, in seconds.
+SEGMENT_SECONDS = float(os.environ.get("VIDEO_TOOL_SEGMENT_SECONDS", "18"))

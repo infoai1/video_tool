@@ -7,9 +7,50 @@
 
 {% if youtube_not_found %}
   <div class="notice">
-    <p>That YouTube video isn't in the library. Paste a link to a Maulana lecture
-       that has been transcribed, or search by words instead.</p>
+    {% if active_job %}
+      <p>This video is already queued for transcription
+         (<a href="{{ url_for('dashboard') }}">job #{{ active_job }}</a>).
+         It'll appear in the library once done.</p>
+    {% else %}
+      <p>That video isn't in the library yet. Transcribe it with Soniox and it'll
+         become searchable once done — track progress on the
+         <a href="{{ url_for('dashboard') }}">dashboard</a>.</p>
+      <div class="vtools">
+        <button id="transcribe-btn" class="btn" type="button" data-url="{{ q|e }}">
+          Transcribe this video with Soniox
+        </button>
+        <span id="transcribe-status" class="muted"></span>
+      </div>
+    {% endif %}
   </div>
+  <script>
+    (function () {
+      var btn = document.getElementById('transcribe-btn');
+      if (!btn) return;
+      var status = document.getElementById('transcribe-status');
+      btn.addEventListener('click', async function () {
+        btn.disabled = true; btn.textContent = 'Queuing…';
+        try {
+          var r = await fetch('/api/transcribe', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: btn.getAttribute('data-url') }),
+          });
+          var j = await r.json();
+          if (j.ok) {
+            status.innerHTML = 'Queued (job #' + j.job_id + '). ' +
+              '<a href="/dashboard">Track it on the dashboard →</a>';
+            btn.style.display = 'none';
+          } else {
+            status.textContent = j.error || 'Could not queue.'; btn.disabled = false;
+            btn.textContent = 'Transcribe this video with Soniox';
+          }
+        } catch (e) {
+          status.textContent = 'Could not queue — try again.'; btn.disabled = false;
+          btn.textContent = 'Transcribe this video with Soniox';
+        }
+      });
+    })();
+  </script>
 {% endif %}
 
 {% if no_store %}

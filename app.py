@@ -8,6 +8,7 @@ import json
 
 import config
 import db
+import jobs
 import search
 import transliterate
 from flask import Flask, abort, jsonify, redirect, render_template, request, url_for
@@ -32,6 +33,7 @@ def index():
         return render_template("index.html", q=q, hits=None, no_store=True)
     hits = []
     youtube_not_found = False
+    active_job = None
     if q:
         # Writable: search caches the query's Urdu transliteration on first use.
         conn = db.connect()
@@ -42,12 +44,15 @@ def index():
                 if vid:
                     return redirect(url_for("video", video_id=vid))
                 youtube_not_found = True
+                active = jobs.active_for_url(conn, q)
+                active_job = active[0] if active else None
             else:
                 hits = search.search(conn, q, limit=60)
         finally:
             conn.close()
     return render_template(
-        "index.html", q=q, hits=hits, no_store=False, youtube_not_found=youtube_not_found
+        "index.html", q=q, hits=hits, no_store=False,
+        youtube_not_found=youtube_not_found, active_job=active_job,
     )
 
 
@@ -105,6 +110,81 @@ def api_romanize():
     finally:
         conn.close()
     return jsonify({"roman": {str(k): v for k, v in out.items()}})
+
+
+@app.route("/api/transcribe", methods=["POST"])
+def api_transcribe():
+    """Enqueue a Soniox transcription for a pasted YouTube link that isn't in the
+    library yet. A worker picks it up; progress shows on the dashboard."""
+    if not db.exists():
+        return jsonify({"ok": False, "error": "store not built yet"}), 503
+    url = ((request.get_json(silent=True) or {}).get("url") or "").strip()
+    yt = search.youtube_id(url)
+    if not yt:
+        return jsonify({"ok": False, "error": "not a YouTube link"}), 400
+    conn = db.connect()
+    try:
+        if search.find_video_by_youtube(conn, url):
+            return jsonify({"ok": False, "error": "already in the library"}), 409
+        active = jobs.active_for_url(conn, url)
+        if active:
+            return jsonify({"ok": True, "job_id": active[0], "status": active[1]})
+        job_id = jobs.enqueue(conn, url)
+    finally:
+        conn.close()
+    return jsonify({"ok": True, "job_id": job_id, "status": "queued"})
+
+
+@app.route("/api/jobs")
+def api_jobs():
+    if not db.exists():
+        return jsonify({"jobs": []})
+    conn = db.connect_ro()
+    try:
+        rows = jobs.recent(conn, limit=int(request.args.get("limit", 25)))
+    finally:
+        conn.close()
+    keys = ["id", "kind", "youtube_url", "title", "status", "detail", "created_at", "updated_at"]
+    return jsonify({"jobs": [dict(zip(keys, r)) for r in rows]})
+
+
+@app.route("/dashboard")
+def dashboard():
+    if not db.exists():
+        return render_template("dashboard.html", no_store=True)
+    conn = db.connect_ro()
+    try:
+        stats = {
+            "videos": conn.execute("SELECT COUNT(*) FROM videos").fetchone()[0],
+            "videos_soniox": conn.execute(
+                "SELECT COUNT(*) FROM videos WHERE source = 'soniox'"
+            ).fetchone()[0],
+            "segments": conn.execute("SELECT COUNT(*) FROM segments").fetchone()[0],
+            "romanized": conn.execute(
+                "SELECT COUNT(*) FROM segments WHERE roman_text IS NOT NULL"
+            ).fetchone()[0],
+        }
+        stats["pct"] = (100.0 * stats["romanized"] / stats["segments"]) if stats["segments"] else 0.0
+        job_rows = jobs.recent(conn, limit=15)
+        romanized_rows = conn.execute(
+            """
+            SELECT v.id, v.title, COUNT(s.roman_text), COUNT(*), MAX(s.roman_at)
+            FROM videos v JOIN segments s ON s.video_id = v.id
+            WHERE s.roman_at IS NOT NULL
+            GROUP BY v.id ORDER BY MAX(s.roman_at) DESC LIMIT 15
+            """
+        ).fetchall()
+    finally:
+        conn.close()
+    jkeys = ["id", "kind", "youtube_url", "title", "status", "detail", "created_at", "updated_at"]
+    return render_template(
+        "dashboard.html", no_store=False, stats=stats,
+        job_list=[dict(zip(jkeys, r)) for r in job_rows],
+        romanized=[
+            {"id": r[0], "title": r[1], "done": r[2], "total": r[3], "last": r[4]}
+            for r in romanized_rows
+        ],
+    )
 
 
 @app.route("/feedback")

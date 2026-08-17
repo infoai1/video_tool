@@ -108,4 +108,21 @@ pre {
   border-radius: 10px; background: var(--card); color: var(--fg); font: inherit;
 }
 .fb .btn { align-self: flex-start; }
+
+.stats { display: flex; flex-wrap: wrap; gap: .75rem; margin: 1rem 0 1.5rem; }
+.stat {
+  display: flex; flex-direction: column; gap: .2rem; padding: .8rem 1rem;
+  background: var(--card); border: 1px solid var(--line); border-radius: 12px; min-width: 130px;
+}
+.stat .num { font-size: 1.5rem; font-weight: 700; }
+.stat .lbl { color: var(--muted); font-size: .82rem; }
+.tbl { width: 100%; border-collapse: collapse; font-size: .92rem; }
+.tbl th, .tbl td { text-align: left; padding: .45rem .5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+.tbl th { color: var(--muted); font-weight: 600; }
+.ell { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.badge { padding: .1rem .5rem; border-radius: 999px; font-size: .8rem; border: 1px solid var(--line); }
+.badge.done { color: #0a6b57; border-color: #0a6b57; }
+.badge.error { color: #b3261e; border-color: #b3261e; }
+.badge.running, .badge.queued { color: var(--muted); }
+h2 { margin-top: 1.8rem; font-size: 1.15rem; }
 .foot { max-width: 780px; margin: 0 auto; padding: 1rem; color: var(--muted); font-size: .85rem; }

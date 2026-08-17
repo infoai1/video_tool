@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — Roman Urdu Transcripts{% endblock %}
+{% block content %}
+<h1>Dashboard</h1>
+{% if no_store %}
+  <div class="notice"><p>The store hasn't been built yet.</p></div>
+{% else %}
+  <div class="stats">
+    <div class="stat"><span class="num">{{ "{:,}".format(stats.videos) }}</span><span class="lbl">videos</span></div>
+    <div class="stat"><span class="num">{{ "{:,}".format(stats.videos_soniox) }}</span><span class="lbl">transcribed here (Soniox)</span></div>
+    <div class="stat"><span class="num">{{ "{:,}".format(stats.segments) }}</span><span class="lbl">segments</span></div>
+    <div class="stat"><span class="num">{{ "%.1f"|format(stats.pct) }}%</span><span class="lbl">romanized ({{ "{:,}".format(stats.romanized) }})</span></div>
+  </div>
+
+  <h2>New transcriptions</h2>
+  {% if job_list %}
+    <table class="tbl">
+      <thead><tr><th>#</th><th>video</th><th>status</th><th>detail</th><th>updated</th></tr></thead>
+      <tbody>
+      {% for j in job_list %}
+        <tr>
+          <td>{{ j.id }}</td>
+          <td class="ell"><a href="{{ j.youtube_url }}" target="_blank" rel="noopener">{{ j.title or j.youtube_url }}</a></td>
+          <td><span class="badge {{ j.status }}">{{ j.status }}</span></td>
+          <td class="ell">{{ j.detail }}</td>
+          <td class="muted">{{ (j.updated_at or '')[:19]|replace('T',' ') }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="hint">No transcription jobs yet. Paste a YouTube link on the search page to transcribe a new video.</p>
+  {% endif %}
+
+  <h2>Recently romanized videos</h2>
+  {% if romanized %}
+    <ul class="vlist">
+      {% for v in romanized %}
+      <li>
+        <a href="{{ url_for('video', video_id=v.id) }}">{{ v.title or 'Untitled video' }}</a>
+        <span class="cov">{{ v.done }}/{{ v.total }} lines · {{ (v.last or '')[:19]|replace('T',' ') }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="hint">No videos romanized yet. Open a video and press “Show Roman Urdu”.</p>
+  {% endif %}
+{% endif %}
+{% endblock %}

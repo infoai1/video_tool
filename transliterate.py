@@ -16,6 +16,7 @@ parsed tolerantly. It is reached through the configured provider (Anthropic,
 the claude CLI, or OpenRouter — see config.PROVIDER), and the call is injectable
 so the engine can be tested without the network or an API key.
 """
+import datetime
 import json
 import subprocess
 import urllib.request
@@ -23,6 +24,10 @@ import urllib.request
 import config
 import db
 import normalize
+
+
+def _now():
+    return datetime.datetime.utcnow().isoformat() + "Z"
 
 # The JSON-shape instruction appended for providers that don't take a schema
 # (OpenRouter, the claude CLI). The Anthropic SDK path enforces it via _SCHEMA.
@@ -179,8 +184,8 @@ def _write_roman(conn, seg_id, roman, model):
     """Store one segment's Roman Urdu and (re)index it for search."""
     norm = normalize.normalize(roman)
     conn.execute(
-        "UPDATE segments SET roman_text = ?, roman_norm = ?, model = ? WHERE id = ?",
-        (roman, norm, model, seg_id),
+        "UPDATE segments SET roman_text = ?, roman_norm = ?, model = ?, roman_at = ? WHERE id = ?",
+        (roman, norm, model, _now(), seg_id),
     )
     # rowid == segments.id, so re-indexing is delete-then-insert by id.
     conn.execute("DELETE FROM segments_fts WHERE rowid = ?", (seg_id,))
