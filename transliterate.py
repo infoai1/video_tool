@@ -18,6 +18,7 @@ so the engine can be tested without the network or an API key.
 """
 import datetime
 import json
+import re
 import subprocess
 import urllib.request
 
@@ -79,14 +80,47 @@ def _user_content(batch):
     return "Transliterate every segment:\n" + json.dumps(_payload(batch), ensure_ascii=False)
 
 
+# One {"id":N,"roman":"..."} entry, tolerant of unescaped inner quotes: the
+# roman value runs (non-greedily) up to the quote that precedes a , ] or } —
+# the only quote that is structurally meaningful. Cheaper models (DeepSeek)
+# sometimes leave inner quotes or raw newlines unescaped; this salvages the
+# well-formed entries instead of dropping the whole batch.
+_ENTRY_RE = re.compile(
+    r'"id"\s*:\s*(\d+)\s*,\s*"roman"\s*:\s*"(.*?)"\s*(?=[,}\]])', re.DOTALL
+)
+
+
+def _unescape(s):
+    """Best-effort JSON string unescape for a salvaged roman value."""
+    try:
+        return json.loads('"' + s + '"')
+    except Exception:
+        return (s.replace('\\"', '"').replace("\\n", " ")
+                 .replace("\\t", " ").replace("\\\\", "\\")).strip()
+
+
 def _parse(text):
-    """Extract {id: roman} from the model's reply, tolerating code fences or
-    stray prose by taking the outermost JSON object."""
+    """Extract {id: roman} from the model's reply. Take the outermost JSON
+    object and parse it; if the model returned slightly-malformed JSON (an
+    unescaped quote, a raw newline, a truncated tail), fall back to salvaging
+    every complete {id, roman} entry by regex, so one bad entry doesn't lose
+    the other 24. Un-returned ids simply get retried on the next pass."""
     i, j = text.find("{"), text.rfind("}")
-    if i == -1 or j == -1:
-        return {}
-    data = json.loads(text[i : j + 1])
-    return {int(item["id"]): item["roman"] for item in data.get("segments", [])}
+    if i != -1 and j != -1:
+        try:
+            # strict=False tolerates raw control chars (newlines/tabs) in strings
+            data = json.loads(text[i : j + 1], strict=False)
+            out = {}
+            for item in data.get("segments", []):
+                try:
+                    out[int(item["id"])] = item["roman"]
+                except (KeyError, TypeError, ValueError):
+                    pass
+            if out:
+                return out
+        except (ValueError, AttributeError):
+            pass
+    return {int(m.group(1)): _unescape(m.group(2)) for m in _ENTRY_RE.finditer(text)}
 
 
 # --- provider completions: (system, user) text in -> assistant text out -------

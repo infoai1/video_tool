@@ -98,6 +98,28 @@ def test_video_matches_and_expand_page(tmp_path, monkeypatch):
     assert 'class="line match"' in body and "Back to results" in body and "m-count" in body
 
 
+def test_parse_tolerates_malformed_json():
+    # clean JSON parses normally
+    assert transliterate._parse(
+        '{"segments":[{"id":1,"roman":"namaz"},{"id":2,"roman":"sabr"}]}'
+    ) == {1: "namaz", 2: "sabr"}
+    # an unescaped inner quote used to raise and kill the whole batch — now the
+    # good entries are salvaged instead
+    assert transliterate._parse(
+        '{"segments":[{"id":5,"roman":"aap "zara" sochiye"},{"id":6,"roman":"theek"}]}'
+    ) == {5: 'aap "zara" sochiye', 6: "theek"}
+    # a truncated tail (max_tokens) keeps the complete entries
+    assert transliterate._parse(
+        '{"segments":[{"id":9,"roman":"done"},{"id":10,"roman":"cut off'
+    ) == {9: "done"}
+    # a raw newline inside a string is tolerated
+    assert transliterate._parse(
+        '{"segments":[{"id":7,"roman":"line one\nline two"}]}'
+    ) == {7: "line one\nline two"}
+    # never raises, even on garbage
+    assert transliterate._parse("not json at all") == {}
+
+
 def test_library_saves_tags_and_tabs(tmp_path, monkeypatch):
     import library
 
