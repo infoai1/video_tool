@@ -12,36 +12,46 @@ indexes them, and serves a small web app where you can:
 - **browse a video's full transcript**, line by line with timestamps, with an
   in-page filter.
 
-## Why Roman Urdu
+## Searchable everywhere, transliterated on demand
 
-The transcripts are in Urdu script, but a large share of viewers search in Roman
-Urdu — and Roman-Urdu queries can't keyword-match Urdu-script text at all. A
-Roman Urdu transcript closes that gap. Because one model transliterates the whole
-corpus, its spelling is internally consistent, and a normaliser (`normalize.py`)
-folds the remaining spelling variance on both the corpus and the query so they
-meet.
+The whole library is searchable **immediately after ingest**, before any
+transliteration, and Roman Urdu is produced **lazily** — only for the segments a
+user actually looks at. This avoids a giant upfront transliteration job.
 
-## How it fits together
+How search covers 100% of the corpus with (almost) nothing transliterated yet:
+
+- Ingest indexes the **Urdu script itself** (`urdu_fts`). That's a cheap one-time
+  copy of what's already in `annotation.db`, so every video is searchable at once.
+- A Roman Urdu **query** is transliterated *back* to Urdu (once, then cached) and
+  matched against that Urdu index — so `namaz` finds `نماز` across the library.
+- Segments that already have Roman are also matched on the **Roman index**
+  (`segments_fts`), which is more precise; the two result sets are unioned.
+
+When a result or a video page is shown, the frontend asks `/api/romanize` to
+transliterate just those lines (cached, so each segment is done at most once).
+The page shows Urdu instantly and Roman fills in a few lines at a time.
 
 ```
-annotation.db            roman.db (this tool owns it)
-(Urdu-script,      ─►    videos / segments (urdu + roman + search index)
- read-only)        ingest        └─ transliterate (Claude Haiku) ─► web app
+annotation.db          roman.db (this tool owns it)
+(Urdu-script,    ─►    videos / segments / urdu_fts   ← searchable now
+ read-only)      ingest                     │
+                          search (Urdu ∪ Roman) ─┐    web app
+                          on demand: /api/romanize ┘ → DeepSeek → roman + roman_fts
 ```
 
 - **Source**: `annotation.db` — the CPS transcript database (the shukr app reads
   the same one). Opened **read-only**; never written to.
 - **Store**: `roman.db` — this tool's own SQLite file. Derived data: delete it
-  and rebuild any time. Holds the Roman Urdu and an FTS5 search index.
+  and rebuild any time. Holds the Urdu + Roman search indexes and the query cache.
 
 | File | Role |
 |------|------|
 | `source.py` | read Urdu-script segments from `annotation.db` (read-only) |
-| `ingest.py` | copy source segments into `roman.db` |
-| `transliterate.py` | Urdu → Roman Urdu with Claude Haiku (batched, resumable) |
-| `normalize.py` | fold Roman Urdu spelling variance for search (corpus + query) |
-| `search.py` | FTS5 search + per-video transcript retrieval |
-| `app.py` / `templates/` | Flask web app (search + browse) |
+| `ingest.py` | copy source segments in **and index the Urdu script** for search |
+| `transliterate.py` | Urdu → Roman (`ensure()` on demand, `run()` for bulk); + query transliteration |
+| `normalize.py` | fold spelling variance for search — Roman **and** Urdu, corpus **and** query |
+| `search.py` | Urdu ∪ Roman FTS search + per-video transcript retrieval |
+| `app.py` / `templates/` / `static/app.js` | web app: search, browse, on-demand romanize |
 | `cli.py` | `ingest` / `transliterate` / `status` / `serve` |
 
 ## Setup
@@ -79,31 +89,37 @@ python cli.py serve             # http://127.0.0.1:5060
 ## Build the real thing
 
 ```bash
-python cli.py status                 # what's in the source and the store
-python cli.py ingest                 # copy Urdu-script segments into roman.db
-python cli.py transliterate          # fill in Roman Urdu with Claude Haiku
-python cli.py serve                  # run the search + browse app
+python cli.py status     # what's in the source and the store
+python cli.py ingest     # copy ALL Urdu segments in + index them → searchable now
+python cli.py serve      # run the app; Roman fills in on demand as pages are viewed
 ```
 
-Both `ingest` and `transliterate` are **resumable** and take `--limit`, so you
-can pilot on a subset first:
+That's it for the demand-based setup: after `ingest`, the whole library is
+searchable and transliteration happens lazily via the web app. No bulk job.
+
+**Optional bulk fill.** If you'd rather have Roman ready everywhere up front
+(e.g. for the fastest page loads), run the resumable bulk pass — cheap with
+DeepSeek:
 
 ```bash
-python cli.py ingest --limit 2000
-python cli.py transliterate --limit 2000
+VIDEO_TOOL_PROVIDER=openrouter VIDEO_TOOL_MODEL=deepseek/deepseek-v4-flash \
+  python cli.py transliterate            # drains the backlog; --limit N to chunk
 ```
 
-`status` prints a rough cost estimate for finishing the backlog before you
-commit to the whole corpus.
+`status` prints a rough cost estimate before you commit to the whole corpus.
 
-## Scale & cost
+## On-demand transliteration & cost
 
-The full corpus is large (~2,200 videos, hundreds of thousands of segments).
-Transliteration is batched (`VIDEO_TOOL_BATCH_SIZE`, default 25 segments per
-request) and resumable, so it can run in chunks. Haiku is the cheapest capable
-model for this; `cli.py status` gives an order-of-magnitude cost estimate for
-what's left. **Start with a `--limit` pilot**, check quality in the web app,
-then run the rest.
+Demand-based transliteration means the "large job" never has to run at once —
+each video costs a transliteration only when someone opens it, and only once
+(it's cached). **DeepSeek** (`deepseek/deepseek-v4-flash` via OpenRouter) is the
+recommended on-demand model: ~$0.00006 per segment, so a whole video is a
+fraction of a cent, and the full ~427k-segment corpus would be only a few
+dollars if you ever chose to bulk-fill it.
+
+Set the on-demand model with `VIDEO_TOOL_PROVIDER` + `VIDEO_TOOL_MODEL` (see
+below). The `/api/romanize` endpoint caps work per request and the frontend
+requests Roman in small chunks, so pages stay responsive.
 
 ## Tests
 

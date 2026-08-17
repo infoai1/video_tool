@@ -7,14 +7,17 @@ is safe to delete and regenerate.
 Layout
 ------
 videos     one row per video (its YouTube URL + title)
-segments   one row per timestamped clip: the Urdu-script source text and, once
-           transliterated, its Roman Urdu (`roman_text`) and a normalised form
-           (`roman_norm`) that the search index and query path both use.
-segments_fts  FTS5 index over roman_norm, rowid = segments.id. Populated at
-           transliteration time, not ingest time, because roman_norm only
-           exists once a segment has been transliterated. Only the transcript
-           is indexed (not the title) so a hit means the words were actually
-           spoken in that clip, not merely that the video's title matched.
+segments   one row per timestamped clip: the Urdu-script source text and its
+           normalised form (`urdu_norm`), plus — once transliterated — its Roman
+           Urdu (`roman_text`) and normalised form (`roman_norm`).
+urdu_fts   FTS5 index over urdu_norm, rowid = segments.id. Built at INGEST for
+           the whole corpus, so every video is searchable immediately, before
+           any transliteration. This is what makes "searchable everywhere now"
+           work: a Roman query is transliterated to Urdu and matched here.
+segments_fts  FTS5 index over roman_norm, rowid = segments.id. Filled as
+           segments are transliterated (on demand or in bulk); improves recall
+           and ranking for content that already has Roman.
+query_cache  roman_norm -> Urdu, so each distinct query is transliterated once.
 """
 import os
 import sqlite3
@@ -34,6 +37,7 @@ CREATE TABLE IF NOT EXISTS segments (
     video_id    INTEGER NOT NULL REFERENCES videos(id),
     start_time  REAL NOT NULL,
     urdu_text   TEXT NOT NULL,        -- source Urdu-script transcript
+    urdu_norm   TEXT,                 -- normalised urdu_text, for search
     roman_text  TEXT,                 -- Roman Urdu, NULL until transliterated
     roman_norm  TEXT,                 -- normalised roman_text, for search
     model       TEXT,                 -- which model produced roman_text
@@ -42,12 +46,21 @@ CREATE TABLE IF NOT EXISTS segments (
 );
 
 CREATE INDEX IF NOT EXISTS idx_segments_video ON segments(video_id);
--- Partial index over the not-yet-transliterated backlog, so `transliterate`
+-- Partial index over the not-yet-transliterated backlog, so bulk transliterate
 -- finds its next batch without scanning the whole table.
 CREATE INDEX IF NOT EXISTS idx_segments_todo ON segments(id) WHERE roman_text IS NULL;
 
+CREATE VIRTUAL TABLE IF NOT EXISTS urdu_fts
+    USING fts5(urdu_norm, tokenize = 'unicode61');
+
 CREATE VIRTUAL TABLE IF NOT EXISTS segments_fts
     USING fts5(roman_norm, tokenize = 'unicode61');
+
+-- roman_norm(query) -> transliterated Urdu, so a repeated query costs nothing.
+CREATE TABLE IF NOT EXISTS query_cache (
+    roman_norm TEXT PRIMARY KEY,
+    urdu       TEXT
+);
 """
 
 

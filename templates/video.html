@@ -10,14 +10,14 @@
 
 <ol class="transcript">
   {% for s in video.segments %}
-  <li class="line" data-roman="{{ (s.roman_text or '')|e }}">
+  <li class="line">
     {% if video.youtube_url %}
       <a class="ts" href="{{ s.timestamp_url }}" target="_blank" rel="noopener">{{ s.start_time|hhmmss }}</a>
     {% else %}
       <span class="ts">{{ s.start_time|hhmmss }}</span>
     {% endif %}
     <span class="text">
-      <span class="roman">{{ s.roman_text or '—' }}</span>
+      <span class="roman" data-seg="{{ s.segment_id }}">{{ s.roman_text or '' }}</span>
       {% if s.urdu_text %}<span class="urdu" dir="rtl">{{ s.urdu_text }}</span>{% endif %}
     </span>
   </li>
@@ -25,12 +25,13 @@
 </ol>
 
 <script>
-  // In-page filter: hide lines whose Roman Urdu doesn't contain the typed text.
-  // Case-insensitive substring; kept simple and dependency-free.
+  // In-page filter: hide lines whose Roman Urdu (filled in on demand) doesn't
+  // contain the typed text. Reads the live text so it works as Roman streams in.
   function filterLines(q) {
     q = q.trim().toLowerCase();
     document.querySelectorAll('.transcript .line').forEach(function (li) {
-      var hay = (li.getAttribute('data-roman') || '').toLowerCase();
+      var el = li.querySelector('.roman');
+      var hay = (el ? el.textContent : '').toLowerCase();
       li.style.display = (!q || hay.indexOf(q) !== -1) ? '' : 'none';
     });
   }

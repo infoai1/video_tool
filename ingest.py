@@ -8,11 +8,14 @@ just resumes.
 import datetime
 
 import db
+import normalize
 import source
 
 
 def ingest(limit=None, source_path=None, db_path=None):
-    """Copy source segments into the store. Returns (new_videos, new_segments)."""
+    """Copy source segments into the store, indexing the Urdu script for search.
+
+    Returns (new_videos, new_segments)."""
     db.init_db(db_path)
     conn = db.connect(db_path)
     new_videos = 0
@@ -37,13 +40,22 @@ def ingest(limit=None, source_path=None, db_path=None):
                 ).fetchone()[0]
                 video_ids[svid] = local_id
 
+            urdu_norm = normalize.normalize_urdu(row["urdu_text"])
             cur = conn.execute(
                 "INSERT OR IGNORE INTO segments "
-                "(video_id, start_time, urdu_text, created_at) VALUES (?, ?, ?, ?)",
-                (local_id, row["start_time"], row["urdu_text"], now),
+                "(video_id, start_time, urdu_text, urdu_norm, created_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (local_id, row["start_time"], row["urdu_text"], urdu_norm, now),
             )
             if cur.rowcount:
                 new_segments += 1
+                # Index the Urdu now so the segment is searchable before any
+                # transliteration. rowid == segments.id.
+                seg_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+                conn.execute(
+                    "INSERT INTO urdu_fts (rowid, urdu_norm) VALUES (?, ?)",
+                    (seg_id, urdu_norm),
+                )
         conn.commit()
     finally:
         conn.close()

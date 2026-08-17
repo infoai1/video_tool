@@ -72,9 +72,9 @@ def test_parse_tolerates_code_fences_and_prose():
     assert transliterate._parse("no json here") == {}
 
 
-def test_claude_cli_batch_parses_envelope(monkeypatch):
-    # The CLI returns a JSON envelope whose `result` holds the (possibly fenced)
-    # assistant text; _claude_cli_batch must unwrap and parse it.
+def test_claude_cli_provider_parses_envelope(monkeypatch):
+    # With PROVIDER=claude_cli, a batch goes through the CLI, whose JSON envelope
+    # holds the (possibly fenced) assistant text in `result`.
     class FakeProc:
         returncode = 0
         stderr = ""
@@ -82,9 +82,35 @@ def test_claude_cli_batch_parses_envelope(monkeypatch):
             {"is_error": False, "result": '```json\n{"segments":[{"id":5,"roman":"sabr"}]}\n```'}
         )
 
+    monkeypatch.setattr(transliterate.config, "PROVIDER", "claude_cli")
     monkeypatch.setattr(transliterate.subprocess, "run", lambda *a, **k: FakeProc())
-    out = transliterate._claude_cli_batch([(5, "urdu", "title")], "claude-haiku-4-5")
+    out = transliterate._default_translit_batch([(5, "urdu", "title")], "claude-haiku-4-5")
     assert out == {5: "sabr"}
+
+
+def test_ensure_transliterates_only_missing(tmp_path):
+    p = str(tmp_path / "roman.db")
+    ids = _seed_urdu(p, [("a",), ("b",)])
+    conn = db.connect(p)
+    # Pre-fill the first segment as if already done.
+    transliterate._write_roman(conn, ids[0], "already", "test")
+    conn.commit()
+    calls = []
+
+    def batch_fn(batch):
+        calls.append([sid for sid, _u, _t in batch])
+        return {sid: u.upper() for sid, u, _t in batch}
+
+    out = transliterate.ensure(conn, ids, translit_batch=batch_fn)
+    assert out[ids[0]] == "already"       # untouched
+    assert out[ids[1]] == "B"             # transliterated on demand
+    assert calls == [[ids[1]]]            # only the missing one was sent
+    conn.close()
+
+
+def test_translit_query_uses_injected_completion():
+    urdu = transliterate.translit_query("namaz", complete=lambda system, user: "نماز")
+    assert urdu == "نماز"
 
 
 def test_unreturned_id_stays_pending_and_loop_terminates(tmp_path):

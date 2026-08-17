@@ -32,3 +32,16 @@ def test_query_tokens_dedup_preserving_order():
 def test_variant_spellings_share_a_key():
     for variant in ("namaz", "namaaz", "namāz", "NAMAZ"):
         assert normalize.normalize(variant) == "namaz"
+
+
+def test_urdu_harakat_and_letter_forms_fold():
+    # short-vowel marks drop out
+    assert normalize.normalize_urdu("نَمَاز") == normalize.normalize_urdu("نماز")
+    # arabic yeh/kaf/heh fold to the urdu forms
+    assert normalize.normalize_urdu("علي") == normalize.normalize_urdu("علی")
+    assert normalize.normalize_urdu("مكتب") == normalize.normalize_urdu("مکتب")
+
+
+def test_urdu_tokens_dedup_and_empty():
+    assert normalize.urdu_tokens("اللہ اللہ کا") == ["اللہ", "کا"]
+    assert normalize.urdu_tokens("") == []

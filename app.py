@@ -5,6 +5,7 @@ page explains how to build it rather than erroring.
 """
 import db
 import search
+import transliterate
 from flask import Flask, abort, jsonify, render_template, request
 
 app = Flask(__name__)
@@ -27,7 +28,8 @@ def index():
         return render_template("index.html", q=q, hits=None, no_store=True)
     hits = []
     if q:
-        conn = db.connect_ro()
+        # Writable: search caches the query's Urdu transliteration on first use.
+        conn = db.connect()
         try:
             hits = search.search(conn, q, limit=60)
         finally:
@@ -66,12 +68,29 @@ def api_search():
     q = (request.args.get("q") or "").strip()
     if not db.exists():
         return jsonify({"error": "store not built yet", "results": []}), 503
-    conn = db.connect_ro()
+    conn = db.connect()
     try:
         hits = search.search(conn, q, limit=int(request.args.get("limit", 60)))
     finally:
         conn.close()
     return jsonify({"query": q, "count": len(hits), "results": hits})
+
+
+@app.route("/api/romanize", methods=["POST"])
+def api_romanize():
+    """On-demand transliteration for the segments a page is showing. The frontend
+    posts the segment ids that lack Roman; we transliterate the missing ones
+    (cached, so at most once) and return {id: roman}."""
+    if not db.exists():
+        return jsonify({"error": "store not built yet", "roman": {}}), 503
+    ids = (request.get_json(silent=True) or {}).get("ids") or []
+    ids = [int(i) for i in ids][:50]  # bound the work per request
+    conn = db.connect()
+    try:
+        out = transliterate.ensure(conn, ids)
+    finally:
+        conn.close()
+    return jsonify({"roman": {str(k): v for k, v in out.items()}})
 
 
 @app.route("/health")

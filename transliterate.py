@@ -5,17 +5,16 @@ capable model is the right one — and one model transliterating the whole corpu
 gives internally consistent spelling, which is exactly what makes the result
 searchable (see normalize.py).
 
-The run is:
-  - batched   — many segments per request, to amortise the fixed prompt cost;
-  - resumable — only segments with roman_text IS NULL are processed, and each
-                batch is committed, so an interrupted run costs one batch, not
-                a restart;
-  - structured — the model must return JSON matching a schema, so we get a
-                reliable id -> roman mapping instead of parsing prose.
+Two entry points:
+  - run()     — bulk/background fill of the whole backlog (batched, resumable).
+  - ensure()  — on-demand: transliterate a specific set of segments right now
+                (used when a search result or a video page needs Roman), cached
+                so each segment is transliterated at most once.
 
-The model call is injectable (`translit_batch`) so the engine can be tested
-without the network or an API key, and it can be reached through either the
-Anthropic API directly or OpenRouter (see config.PROVIDER).
+The model is asked to return JSON ({segments:[{id,roman}]}) and the reply is
+parsed tolerantly. It is reached through the configured provider (Anthropic,
+the claude CLI, or OpenRouter — see config.PROVIDER), and the call is injectable
+so the engine can be tested without the network or an API key.
 """
 import json
 import subprocess
@@ -50,25 +49,13 @@ sometimes "namaaz") so the index is consistent.
 empty string for it.
 - Return exactly one entry per input id."""
 
-_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "segments": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "id": {"type": "integer"},
-                    "roman": {"type": "string"},
-                },
-                "required": ["id", "roman"],
-                "additionalProperties": False,
-            },
-        }
-    },
-    "required": ["segments"],
-    "additionalProperties": False,
-}
+# For the reverse direction: turn a user's Roman Urdu search phrase back into
+# Urdu script, so it can be matched against the Urdu index (search.py).
+QUERY_SYSTEM = (
+    "You convert a Roman Urdu search phrase into Urdu script. Output ONLY the "
+    "Urdu words for the same phrase, space separated — no punctuation, no Latin "
+    "letters, no explanation."
+)
 
 _PENDING_SQL = """
 SELECT s.id, s.urdu_text, v.title
@@ -97,36 +84,32 @@ def _parse(text):
     return {int(item["id"]): item["roman"] for item in data.get("segments", [])}
 
 
-def _anthropic_batch(batch, model):
-    """Transliterate one batch via the Anthropic API (structured output).
+# --- provider completions: (system, user) text in -> assistant text out -------
+# One shared shape keeps the three providers interchangeable and serves both
+# jobs: batch transliteration (JSON in the reply) and query transliteration
+# (plain Urdu in the reply). No response_format / schema — some models (DeepSeek)
+# return null content when json_object mode is forced; _parse handles the rest.
 
-    Imported lazily so the rest of the tool runs without the anthropic package.
-    """
+
+def _anthropic_complete(system, user, model, max_tokens):
     import anthropic
 
     client = anthropic.Anthropic()
     resp = client.messages.create(
         model=model,
-        max_tokens=8000,
-        system=[{"type": "text", "text": SYSTEM, "cache_control": {"type": "ephemeral"}}],
-        output_config={"format": {"type": "json_schema", "schema": _SCHEMA}},
-        messages=[{"role": "user", "content": _user_content(batch)}],
+        max_tokens=max_tokens,
+        system=[{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
+        messages=[{"role": "user", "content": user}],
     )
-    text = next(b.text for b in resp.content if b.type == "text")
-    return _parse(text)
+    return next((b.text for b in resp.content if b.type == "text"), "")
 
 
-def _claude_cli_batch(batch, model):
-    """Transliterate one batch via the authenticated `claude` CLI (Claude Code).
-
-    Uses the box's Claude subscription — no API key, and calls are covered by
-    the plan rather than billed per token. The CLI returns a JSON envelope whose
-    `result` field holds the assistant text; we parse our JSON out of that.
-    """
+def _claude_cli_complete(system, user, model, max_tokens):
+    """Via the authenticated `claude` CLI — uses the Claude subscription, no key."""
     proc = subprocess.run(
         [config.CLAUDE_BIN, "-p", "--model", model,
-         "--output-format", "json", "--append-system-prompt", SYSTEM + _JSON_INSTRUCTION],
-        input=_user_content(batch),
+         "--output-format", "json", "--append-system-prompt", system],
+        input=user,
         capture_output=True,
         text=True,
         timeout=config.CLI_TIMEOUT,
@@ -136,15 +119,11 @@ def _claude_cli_batch(batch, model):
     envelope = json.loads(proc.stdout)
     if envelope.get("is_error"):
         raise RuntimeError(f"claude CLI error: {str(envelope)[:300]}")
-    return _parse(envelope.get("result", ""))
+    return envelope.get("result", "") or ""
 
 
-def _openrouter_batch(batch, model):
-    """Transliterate one batch via OpenRouter's OpenAI-compatible API.
-
-    Uses only the standard library so the tool takes no extra dependency to run
-    on a box that only has an OpenRouter key.
-    """
+def _openrouter_complete(system, user, model, max_tokens):
+    """Via OpenRouter's OpenAI-compatible API — standard library only."""
     if not config.OPENROUTER_API_KEY:
         raise RuntimeError(
             "OPENROUTER_API_KEY is not set (needed for VIDEO_TOOL_PROVIDER=openrouter)."
@@ -152,12 +131,11 @@ def _openrouter_batch(batch, model):
     body = {
         "model": model,
         "messages": [
-            {"role": "system", "content": SYSTEM + _JSON_INSTRUCTION},
-            {"role": "user", "content": _user_content(batch)},
+            {"role": "system", "content": system},
+            {"role": "user", "content": user},
         ],
-        "response_format": {"type": "json_object"},
         "temperature": 0,
-        "max_tokens": 8000,
+        "max_tokens": max_tokens,
     }
     req = urllib.request.Request(
         config.OPENROUTER_URL,
@@ -170,17 +148,31 @@ def _openrouter_batch(batch, model):
     )
     with urllib.request.urlopen(req, timeout=120) as r:
         data = json.load(r)
-    return _parse(data["choices"][0]["message"]["content"])
+    return data["choices"][0]["message"].get("content") or ""
+
+
+def _complete(system, user, model, max_tokens):
+    if config.PROVIDER == "openrouter":
+        return _openrouter_complete(system, user, model, max_tokens)
+    if config.PROVIDER in ("claude_cli", "subscription"):
+        return _claude_cli_complete(system, user, model, max_tokens)
+    return _anthropic_complete(system, user, model, max_tokens)
 
 
 def _default_translit_batch(batch, model=None):
-    """Dispatch one batch to the configured provider. `batch` is (id, urdu, title)."""
-    model = model or config.MODEL
-    if config.PROVIDER == "openrouter":
-        return _openrouter_batch(batch, model)
-    if config.PROVIDER in ("claude_cli", "subscription"):
-        return _claude_cli_batch(batch, model)
-    return _anthropic_batch(batch, model)
+    """Dispatch one batch to the configured provider. `batch` is (id, urdu, ...)."""
+    text = _complete(SYSTEM + _JSON_INSTRUCTION, _user_content(batch), model or config.MODEL, 8000)
+    return _parse(text)
+
+
+def translit_query(roman, model=None, complete=None):
+    """Turn a Roman Urdu search phrase into Urdu script (for the Urdu index).
+
+    `complete` is injectable for tests; defaults to the configured provider.
+    Returns '' if the model gives nothing usable.
+    """
+    fn = complete or (lambda s, u: _complete(s, u, model or config.MODEL, 200))
+    return (fn(QUERY_SYSTEM, roman) or "").strip()
 
 
 def _write_roman(conn, seg_id, roman, model):
@@ -195,6 +187,39 @@ def _write_roman(conn, seg_id, roman, model):
     conn.execute(
         "INSERT INTO segments_fts (rowid, roman_norm) VALUES (?, ?)", (seg_id, norm)
     )
+
+
+def ensure(conn, ids, translit_batch=None, model=None):
+    """On-demand: make sure each segment id has Roman Urdu, transliterating the
+    missing ones now, and return {id: roman_or_None}.
+
+    This is what the web app calls when a search result or a video line needs
+    Roman that hasn't been produced yet. Each segment is transliterated at most
+    once — already-done segments are returned from the store untouched. `conn`
+    must be writable.
+    """
+    ids = [int(i) for i in ids]
+    if not ids:
+        return {}
+    placeholders = ",".join("?" * len(ids))
+    rows = conn.execute(
+        f"SELECT id, urdu_text, roman_text FROM segments WHERE id IN ({placeholders})",
+        ids,
+    ).fetchall()
+    have = {r[0]: r[2] for r in rows}
+    missing = [(r[0], r[1], None) for r in rows if r[2] is None]
+    if missing:
+        model = model or config.MODEL
+        call = translit_batch or (lambda b: _default_translit_batch(b, model))
+        for i in range(0, len(missing), config.BATCH_SIZE):
+            chunk = missing[i : i + config.BATCH_SIZE]
+            romans = call(chunk)
+            for seg_id, _urdu, _t in chunk:
+                if seg_id in romans:
+                    _write_roman(conn, seg_id, romans[seg_id], model)
+                    have[seg_id] = romans[seg_id]
+        conn.commit()
+    return {i: have.get(i) for i in ids}
 
 
 def run(limit=None, batch_size=None, model=None, translit_batch=None,

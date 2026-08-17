@@ -61,10 +61,54 @@ def query_tokens(text):
     search.py turns these into an FTS prefix query. Returns [] for an empty or
     all-punctuation query so the caller can short-circuit.
     """
+    return _dedup(normalize(text).split())
+
+
+# --- Urdu-script normalisation -------------------------------------------------
+# Search covers the whole library by indexing the Urdu script itself, so the
+# Urdu side needs its own fold. ASR output varies in harakat (short-vowel marks)
+# and in near-identical letter forms; folding those makes FTS tokens line up
+# between the corpus and a query transliterated back into Urdu.
+
+# Near-identical letters that should collapse to one form for matching.
+_URDU_FOLD = str.maketrans(
+    {
+        "أ": "ا", "إ": "ا", "آ": "ا", "ٱ": "ا",   # alef variants -> bare alef
+        "ي": "ی", "ى": "ی", "ئ": "ی",             # arabic/alef-maksura/hamza-yeh -> farsi yeh
+        "ك": "ک",                                   # arabic kaf -> keheh
+        "ه": "ہ", "ة": "ہ",                         # arabic heh / teh-marbuta -> gol heh
+        "ؤ": "و",                                   # hamza-waw -> waw
+    }
+)
+# Tatweel and zero-width joiners/marks carry no matchable content.
+_URDU_STRIP = re.compile(
+    "[ـ​‌‍‎‏﻿­]"
+)
+
+
+def normalize_urdu(text):
+    """Fold Urdu-script text to its search key: drop harakat, unify letter forms,
+    strip joiners. Applied to the corpus at ingest and to a transliterated query."""
+    if not text:
+        return ""
+    text = unicodedata.normalize("NFC", text)
+    # Drop nonspacing marks (harakat / tashkeel) generically.
+    text = "".join(ch for ch in text if unicodedata.category(ch) != "Mn")
+    text = text.translate(_URDU_FOLD)
+    text = _URDU_STRIP.sub("", text)
+    return _WS.sub(" ", text).strip()
+
+
+def urdu_tokens(text):
+    """Deduped, order-preserving tokens of normalised Urdu, for an FTS query."""
+    return _dedup(normalize_urdu(text).split())
+
+
+def _dedup(tokens):
     seen = set()
     out = []
-    for t in normalize(text).split():
-        if t not in seen:
+    for t in tokens:
+        if t and t not in seen:
             seen.add(t)
             out.append(t)
     return out

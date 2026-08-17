@@ -14,6 +14,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import db  # noqa: E402
+import normalize  # noqa: E402
 import transliterate  # noqa: E402
 
 # (youtube_url, title, [(start_time, urdu, roman), ...])
@@ -53,11 +54,16 @@ def main():
             )
             vid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
             for start, urdu, roman in lines:
+                urdu_norm = normalize.normalize_urdu(urdu)
                 conn.execute(
-                    "INSERT INTO segments (video_id, start_time, urdu_text) VALUES (?, ?, ?)",
-                    (vid, start, urdu),
+                    "INSERT INTO segments (video_id, start_time, urdu_text, urdu_norm) "
+                    "VALUES (?, ?, ?, ?)",
+                    (vid, start, urdu, urdu_norm),
                 )
                 sid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+                conn.execute(
+                    "INSERT INTO urdu_fts (rowid, urdu_norm) VALUES (?, ?)", (sid, urdu_norm)
+                )
                 romans[sid] = roman
         conn.commit()
     finally:

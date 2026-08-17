@@ -1,12 +1,19 @@
-"""Search and browse the Roman Urdu store.
+"""Search and browse the store.
 
-Search folds the query with the same normaliser used on the corpus (normalize.py)
-and runs it against the FTS5 index as a prefix-AND query, so "namaz roza" finds
-segments containing both, and partial words still match. Only the transcript is
-indexed, so a hit means the words were actually spoken in that clip. Results are
-ranked by BM25.
+The whole library is searchable immediately, before any transliteration, by
+indexing the Urdu script itself. A Roman Urdu query is matched two ways and the
+results are unioned:
+
+  1. Roman index (segments_fts) — precise, covers segments already transliterated.
+  2. Urdu index (urdu_fts) — full corpus. The Roman query is transliterated back
+     to Urdu (once, then cached in query_cache) and matched here.
+
+Both fold their side with the shared normaliser (normalize.py) and run a
+prefix-AND FTS query, so "namaz roza" needs both words and partial words match.
+Roman hits are listed first (higher precision); Urdu hits fill in the rest.
 """
 import normalize
+import transliterate
 
 
 def youtube_timestamp_url(youtube_url, start_time):
@@ -31,27 +38,76 @@ def _row_to_hit(row):
     }
 
 
-_SEARCH_SQL = """
-SELECT s.id, v.id, v.title, v.youtube_url, s.start_time, s.roman_text, s.urdu_text
-FROM segments_fts f
-JOIN segments s ON s.id = f.rowid
-JOIN videos v ON v.id = s.video_id
-WHERE segments_fts MATCH ?
-ORDER BY bm25(segments_fts)
-LIMIT ?
+_HIT_COLS = "s.id, v.id, v.title, v.youtube_url, s.start_time, s.roman_text, s.urdu_text"
+
+_ROMAN_SQL = f"""
+SELECT {_HIT_COLS}
+FROM segments_fts f JOIN segments s ON s.id = f.rowid JOIN videos v ON v.id = s.video_id
+WHERE segments_fts MATCH ? ORDER BY bm25(segments_fts) LIMIT ?
+"""
+
+_URDU_SQL = f"""
+SELECT {_HIT_COLS}
+FROM urdu_fts f JOIN segments s ON s.id = f.rowid JOIN videos v ON v.id = s.video_id
+WHERE urdu_fts MATCH ? ORDER BY bm25(urdu_fts) LIMIT ?
 """
 
 
-def search(conn, q, limit=50):
-    """Return up to `limit` matching segments, best first. [] if the query is empty."""
-    tokens = normalize.query_tokens(q)
-    if not tokens:
-        return []
-    # tokens are already [a-z0-9] only (normalize strips everything else), so
-    # building the MATCH string by concatenation is safe here.
-    match = " AND ".join(f"{t}*" for t in tokens)
-    rows = conn.execute(_SEARCH_SQL, (match, limit)).fetchall()
-    return [_row_to_hit(r) for r in rows]
+def _resolve_query_urdu(conn, q, translit_query):
+    """Roman query -> Urdu script, cached in query_cache. `conn` must be writable.
+
+    A failed transliteration caches '' so a broken query isn't retried in a hot
+    loop; the Roman index still answers on its own.
+    """
+    key = normalize.normalize(q)
+    if not key:
+        return ""
+    row = conn.execute("SELECT urdu FROM query_cache WHERE roman_norm = ?", (key,)).fetchone()
+    if row is not None:
+        return row[0]
+    fn = translit_query or transliterate.translit_query
+    try:
+        urdu = fn(q) or ""
+    except Exception:
+        urdu = ""
+    conn.execute(
+        "INSERT OR REPLACE INTO query_cache (roman_norm, urdu) VALUES (?, ?)", (key, urdu)
+    )
+    conn.commit()
+    return urdu
+
+
+def _fts_and(tokens):
+    # tokens are already restricted to word chars by the normaliser, so building
+    # the MATCH string by concatenation is safe.
+    return " AND ".join(f"{t}*" for t in tokens)
+
+
+def search(conn, q, limit=50, translit_query=None):
+    """Return up to `limit` matching segments, best first. [] for an empty query.
+
+    `translit_query` (roman -> urdu) is injectable for tests; production uses the
+    configured provider. `conn` must be writable (the query transliteration is
+    cached on first use)."""
+    hits = []
+    seen = set()
+
+    def add(rows):
+        for row in rows:
+            if row[0] not in seen:
+                seen.add(row[0])
+                hits.append(_row_to_hit(row))
+
+    roman_tokens = normalize.query_tokens(q)
+    if roman_tokens:
+        add(conn.execute(_ROMAN_SQL, (_fts_and(roman_tokens), limit)))
+
+    urdu = _resolve_query_urdu(conn, q, translit_query)
+    urdu_toks = normalize.urdu_tokens(urdu)
+    if urdu_toks:
+        add(conn.execute(_URDU_SQL, (_fts_and(urdu_toks), limit)))
+
+    return hits[:limit]
 
 
 def get_video(conn, video_id):
