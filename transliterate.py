@@ -268,6 +268,39 @@ def run(limit=None, batch_size=None, model=None, translit_batch=None,
     return done
 
 
+def romanize_video(conn, video_id, progress=None, translit_batch=None, model=None):
+    """Transliterate all of a video's pending segments, reporting progress.
+
+    `progress(done, total)` is called after each batch (done/total counted over
+    the whole video, including already-transliterated lines). Returns (done, total).
+    Used by the background romanize job so the user can keep browsing.
+    """
+    total = conn.execute(
+        "SELECT COUNT(*) FROM segments WHERE video_id = ?", (video_id,)
+    ).fetchone()[0]
+    rows = conn.execute(
+        "SELECT id, urdu_text FROM segments WHERE video_id = ? AND roman_text IS NULL "
+        "ORDER BY start_time",
+        (video_id,),
+    ).fetchall()
+    done = total - len(rows)
+    if progress:
+        progress(done, total)
+    model = model or config.MODEL
+    call = translit_batch or (lambda b: _default_translit_batch(b, model))
+    for i in range(0, len(rows), config.BATCH_SIZE):
+        chunk = [(r[0], r[1], None) for r in rows[i : i + config.BATCH_SIZE]]
+        romans = call(chunk)
+        for seg_id, _u, _t in chunk:
+            if seg_id in romans:
+                _write_roman(conn, seg_id, romans[seg_id], model)
+        conn.commit()
+        done += len(chunk)
+        if progress:
+            progress(done, total)
+    return done, total
+
+
 def status(db_path=None):
     """(done, pending) transliteration counts, for the CLI status command."""
     if not db.exists(db_path):

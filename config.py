@@ -3,6 +3,7 @@
 Everything the tool needs to locate its source data, its own store, and the
 transliteration model lives here so nothing else has to reach into os.environ.
 """
+import json
 import os
 
 # Source of Urdu-script transcripts. The tool NEVER writes here — it is opened
@@ -57,3 +58,19 @@ SONIOX_URL = "https://api.soniox.com/v1"
 YT_COOKIES = os.environ.get("VIDEO_TOOL_YT_COOKIES", "")
 # Rough target length of a transcript segment, in seconds.
 SEGMENT_SECONDS = float(os.environ.get("VIDEO_TOOL_SEGMENT_SECONDS", "18"))
+
+# Login. Credentials + session secret live in a JSON file OUTSIDE the repo
+# (auth.json, gitignored), or in env vars. When neither is set, auth is OFF —
+# so local dev and the tests aren't gated. The file avoids env-quoting issues
+# with special characters in the password.
+_AUTH_FILE = os.environ.get("VIDEO_TOOL_AUTH_FILE", "auth.json")
+_auth = {}
+if os.path.exists(_AUTH_FILE):
+    try:
+        with open(_AUTH_FILE, encoding="utf-8") as _f:
+            _auth = json.load(_f)
+    except (OSError, ValueError):
+        _auth = {}
+AUTH_USER = os.environ.get("VIDEO_TOOL_AUTH_USER", _auth.get("user", ""))
+AUTH_PASSWORD = os.environ.get("VIDEO_TOOL_AUTH_PASSWORD", _auth.get("password", ""))
+SECRET_KEY = os.environ.get("VIDEO_TOOL_SECRET", _auth.get("secret", "")) or "dev-insecure-key"

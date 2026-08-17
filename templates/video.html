@@ -2,21 +2,51 @@
 {% block title %}{{ video.title or 'Video' }} — Roman Urdu Transcripts{% endblock %}
 {% block content %}
 <h1 class="vhead">{{ video.title or 'Untitled video' }}</h1>
-{% if video.youtube_url %}
+
+{% if youtube_id %}
+  <div class="player-wrap"><div id="player" data-yt="{{ youtube_id }}"></div></div>
+{% elif video.youtube_url %}
   <p><a class="ext" href="{{ video.youtube_url }}" target="_blank" rel="noopener">Open on YouTube ↗</a></p>
 {% endif %}
 
 <div class="vtools">
+  <div class="seg" id="scriptfilter">
+    <button type="button" data-mode="both" class="on">Both</button>
+    <button type="button" data-mode="roman">Roman</button>
+    <button type="button" data-mode="urdu">Urdu</button>
+  </div>
+
   <button id="romanize-btn" class="btn" type="button">Show Roman Urdu</button>
-  <span id="romanize-status" class="muted"></span>
+
+  <details class="export">
+    <summary class="btn">Export .docx</summary>
+    <div class="export-menu">
+      <label>Script
+        <select id="exp-script">
+          <option value="both">Both</option>
+          <option value="roman">Roman only</option>
+          <option value="urdu">Urdu only</option>
+        </select>
+      </label>
+      <label class="cbx"><input type="checkbox" id="exp-ts" checked> Include timestamps</label>
+      <a id="exp-link" class="btn" href="{{ url_for('video_export', video_id=video.id) }}">Download</a>
+    </div>
+  </details>
 </div>
+
+<div id="romanize-progress" class="progress" hidden>
+  <div class="bar"><div class="bar-fill"></div></div>
+  <span class="ptext muted"></span>
+</div>
+
 <input type="search" id="filter" class="filter" placeholder="Filter this transcript…" oninput="filterLines(this.value)">
 
-<ol class="transcript">
+<ol class="transcript" id="transcript">
   {% for s in video.segments %}
   <li class="line">
     {% if video.youtube_url %}
-      <a class="ts" href="{{ s.timestamp_url }}" target="_blank" rel="noopener">{{ s.start_time|hhmmss }}</a>
+      <a class="ts seek" data-t="{{ s.start_time|int }}" href="{{ s.timestamp_url }}"
+         target="_blank" rel="noopener">{{ s.start_time|hhmmss }}</a>
     {% else %}
       <span class="ts">{{ s.start_time|hhmmss }}</span>
     {% endif %}
@@ -29,39 +59,145 @@
 </ol>
 
 <script>
-  // In-page filter: hide lines whose Roman Urdu (filled in on demand) doesn't
-  // contain the typed text. Reads the live text so it works as Roman streams in.
+  var VIDEO_ID = {{ video.id }};
+
+  // ---- inline YouTube player + click-to-seek -------------------------------
+  var player = null;
+  (function () {
+    var el = document.getElementById('player');
+    if (!el) return;
+    var tag = document.createElement('script');
+    tag.src = 'https://www.youtube.com/iframe_api';
+    document.head.appendChild(tag);
+    window.onYouTubeIframeAPIReady = function () {
+      player = new YT.Player('player', {
+        videoId: el.getAttribute('data-yt'),
+        playerVars: { rel: 0 },
+      });
+    };
+  })();
+  document.querySelectorAll('.seek').forEach(function (a) {
+    a.addEventListener('click', function (e) {
+      if (!player || !player.seekTo) return;  // fall back to opening YouTube
+      e.preventDefault();
+      player.seekTo(+a.getAttribute('data-t'), true);
+      player.playVideo();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+  });
+
+  // ---- script filter: Roman / Urdu / Both ----------------------------------
+  (function () {
+    var t = document.getElementById('transcript');
+    var buttons = document.querySelectorAll('#scriptfilter button');
+    function apply(mode) {
+      t.classList.remove('mode-both', 'mode-roman', 'mode-urdu');
+      t.classList.add('mode-' + mode);
+      buttons.forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-mode') === mode); });
+      try { localStorage.setItem('vt-script', mode); } catch (e) {}
+    }
+    buttons.forEach(function (b) {
+      b.addEventListener('click', function () { apply(b.getAttribute('data-mode')); });
+    });
+    var saved = 'both';
+    try { saved = localStorage.getItem('vt-script') || 'both'; } catch (e) {}
+    apply(saved);
+  })();
+
+  // ---- export link builder -------------------------------------------------
+  (function () {
+    var link = document.getElementById('exp-link');
+    var scriptSel = document.getElementById('exp-script');
+    var tsBox = document.getElementById('exp-ts');
+    var base = "{{ url_for('video_export', video_id=video.id) }}";
+    function rebuild() {
+      link.href = base + '?script=' + scriptSel.value + '&timestamps=' + (tsBox.checked ? '1' : '0');
+    }
+    scriptSel.addEventListener('change', rebuild);
+    tsBox.addEventListener('change', rebuild);
+    rebuild();
+  })();
+
+  // ---- background romanization with progress + notification ----------------
+  (function () {
+    var btn = document.getElementById('romanize-btn');
+    var wrap = document.getElementById('romanize-progress');
+    var fill = wrap.querySelector('.bar-fill');
+    var ptext = wrap.querySelector('.ptext');
+    var total = document.querySelectorAll('.roman[data-seg]').length;
+    var have = document.querySelectorAll('.roman[data-seg]:not(:empty)').length;
+    if (have >= total) { btn.style.display = 'none'; return; }  // already romanized
+
+    function showProgress(pct, label) {
+      wrap.hidden = false;
+      fill.style.width = (pct || 0) + '%';
+      ptext.textContent = label;
+    }
+    function notify(title) {
+      if ('Notification' in window && Notification.permission === 'granted' && document.hidden) {
+        new Notification(title);
+      }
+    }
+    async function poll(jobId) {
+      try {
+        var r = await fetch('/api/job/' + jobId);
+        var j = await r.json();
+        if (j.status === 'error') {
+          showProgress(0, 'Could not romanize: ' + (j.detail || 'error'));
+          btn.disabled = false; btn.textContent = 'Show Roman Urdu';
+          return;
+        }
+        showProgress(j.progress || 0, 'Romanizing ' + Math.round(j.progress || 0) +
+          '% — you can keep browsing; it finishes in the background.');
+        if (j.status === 'done') {
+          await window.VT.romanize();   // fill visible lines from cache
+          showProgress(100, 'Done — Roman Urdu ready.');
+          setTimeout(function () { wrap.hidden = true; }, 2500);
+          btn.style.display = 'none';
+          notify('Roman Urdu ready: {{ (video.title or "video")|e }}');
+          return;
+        }
+        setTimeout(function () { poll(jobId); }, 2000);
+      } catch (e) {
+        setTimeout(function () { poll(jobId); }, 4000);
+      }
+    }
+    btn.addEventListener('click', async function () {
+      btn.disabled = true; btn.textContent = 'Romanizing…';
+      if ('Notification' in window && Notification.permission === 'default') {
+        try { Notification.requestPermission(); } catch (e) {}
+      }
+      showProgress(0, 'Starting…');
+      try {
+        var r = await fetch('/api/romanize_video', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ video_id: VIDEO_ID }),
+        });
+        var j = await r.json();
+        if (!j.ok) { showProgress(0, j.error || 'Could not start.'); btn.disabled = false; btn.textContent = 'Show Roman Urdu'; return; }
+        if (j.status === 'done') { await window.VT.romanize(); wrap.hidden = true; btn.style.display = 'none'; return; }
+        try { localStorage.setItem('vt-romanize-' + VIDEO_ID, j.job_id); } catch (e) {}
+        poll(j.job_id);
+      } catch (e) {
+        showProgress(0, 'Could not start — try again.'); btn.disabled = false; btn.textContent = 'Show Roman Urdu';
+      }
+    });
+    // Resume polling if a job for this video was started earlier.
+    try {
+      var prev = localStorage.getItem('vt-romanize-' + VIDEO_ID);
+      if (prev) { btn.disabled = true; btn.textContent = 'Romanizing…'; poll(+prev); }
+    } catch (e) {}
+  })();
+
+  // in-page text filter (reads the live Roman text as it fills in)
   function filterLines(q) {
     q = q.trim().toLowerCase();
     document.querySelectorAll('.transcript .line').forEach(function (li) {
-      var el = li.querySelector('.roman');
-      var hay = (el ? el.textContent : '').toLowerCase();
+      var roman = li.querySelector('.roman');
+      var urdu = li.querySelector('.urdu');
+      var hay = ((roman ? roman.textContent : '') + ' ' + (urdu ? urdu.textContent : '')).toLowerCase();
       li.style.display = (!q || hay.indexOf(q) !== -1) ? '' : 'none';
     });
   }
-
-  // Roman Urdu is produced on demand, so a whole video is transliterated only
-  // when the reader asks for it (and each line is cached after the first time).
-  (function () {
-    var btn = document.getElementById('romanize-btn');
-    var status = document.getElementById('romanize-status');
-    var already = document.querySelectorAll('.roman[data-seg]:not(:empty)').length;
-    var total = document.querySelectorAll('.roman[data-seg]').length;
-    if (already >= total) { btn.style.display = 'none'; return; }  // fully cached
-    btn.addEventListener('click', function () {
-      btn.disabled = true;
-      btn.textContent = 'Romanizing…';
-      window.VT.romanize(function (done, tot, err) {
-        if (err) {
-          status.textContent = 'Could not romanize right now — try again.';
-          btn.disabled = false;
-          btn.textContent = 'Show Roman Urdu';
-          return;
-        }
-        status.textContent = done < tot ? ('Romanizing ' + done + '/' + tot + '…') : 'Done';
-        if (done >= tot) btn.style.display = 'none';
-      });
-    });
-  })();
 </script>
 {% endblock %}

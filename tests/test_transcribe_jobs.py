@@ -22,7 +22,7 @@ def test_jobs_enqueue_claim_and_finish(tmp_path):
     p = str(tmp_path / "roman.db")
     db.init_db(p)
     conn = db.connect(p)
-    jid = jobs.enqueue(conn, "https://youtu.be/abcdefghijk")
+    jid = jobs.enqueue_transcribe(conn, "https://youtu.be/abcdefghijk")
     assert jobs.active_for_url(conn, "https://youtu.be/abcdefghijk")[0] == jid
 
     claimed = jobs.claim(conn)
@@ -32,9 +32,9 @@ def test_jobs_enqueue_claim_and_finish(tmp_path):
     # claimed job is no longer "active" as queued... it's running
     assert jobs.active_for_url(conn, "https://youtu.be/abcdefghijk")[1] == "running"
 
-    jobs.update(conn, jid, status="done", detail="transcribed 10 segments")
+    jobs.update(conn, jid, status="done", detail="transcribed 10 segments", progress=100)
     row = jobs.get(conn, jid)
-    assert row[4] == "done" and "10 segments" in row[5]
+    assert row["status"] == "done" and "10 segments" in row["detail"] and row["progress"] == 100
     conn.close()
 
 

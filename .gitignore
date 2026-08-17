@@ -5,6 +5,9 @@ roman.db-wal
 
 # Local env / secrets
 .env
+auth.json
+youtube_cookies.txt
+feedback.jsonl
 
 # Python
 __pycache__/

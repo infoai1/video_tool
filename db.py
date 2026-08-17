@@ -52,11 +52,13 @@ CREATE TABLE IF NOT EXISTS segments (
 -- web app enqueues; a separate worker processes. Powers the dashboard.
 CREATE TABLE IF NOT EXISTS jobs (
     id          INTEGER PRIMARY KEY,
-    kind        TEXT NOT NULL,        -- 'transcribe'
+    kind        TEXT NOT NULL,        -- 'transcribe' | 'romanize'
     youtube_url TEXT,
     title       TEXT,
+    video_id    INTEGER,              -- for 'romanize' jobs
     status      TEXT NOT NULL,        -- queued | running | done | error
     detail      TEXT,                 -- progress note or error message
+    progress    REAL DEFAULT 0,       -- 0..100, for the progress bar
     created_at  TEXT,
     updated_at  TEXT
 );
@@ -103,6 +105,8 @@ _MIGRATIONS = [
     ("videos", "source", "TEXT DEFAULT 'annotation'"),
     ("videos", "added_at", "TEXT"),
     ("segments", "roman_at", "TEXT"),
+    ("jobs", "video_id", "INTEGER"),
+    ("jobs", "progress", "REAL DEFAULT 0"),
 ]
 
 
