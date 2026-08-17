@@ -3,50 +3,54 @@
 {% block content %}
 <h1 class="vhead">{{ video.title or 'Untitled video' }}</h1>
 
-{% if youtube_id %}
-  <div class="player-solo"><div class="player-wrap"><div id="player" data-yt="{{ youtube_id }}"></div></div></div>
-{% elif video.youtube_url %}
-  <p><a class="ext" href="{{ video.youtube_url }}" target="_blank" rel="noopener">Open on YouTube ↗</a></p>
-{% endif %}
-
 {% if q %}
 <div class="matchbar">
   <a class="back" href="{{ url_for('index') }}?q={{ q|urlencode }}">← Back to results</a>
-  {% if matched_ids %}
-  <div class="matchnav">
-    <button type="button" id="m-prev" class="icon-btn" aria-label="Previous match">‹</button>
-    <span id="m-count" class="muted"></span>
-    <button type="button" id="m-next" class="icon-btn" aria-label="Next match">›</button>
-  </div>
-  {% else %}
-  <span class="muted">No exact “{{ q|e }}” line found in this video.</span>
-  {% endif %}
+  <span class="muted">Playing “{{ q|e }}” — controls stay pinned below the video.</span>
 </div>
 {% endif %}
 
-<div class="vtools">
-  <div class="seg" id="scriptfilter">
-    <button type="button" data-mode="both" class="on">Both</button>
-    <button type="button" data-mode="roman">Roman</button>
-    <button type="button" data-mode="urdu">Urdu</button>
-  </div>
+{# player + action bar are pinned together so Play/Romanize/Export never scroll
+   out of reach while the transcript moves underneath #}
+<div class="stage">
+  {% if youtube_id %}
+    <div class="player-frame"><div class="player-wrap"><div id="player" data-yt="{{ youtube_id }}"></div></div></div>
+  {% elif video.youtube_url %}
+    <p><a class="ext" href="{{ video.youtube_url }}" target="_blank" rel="noopener">Open on YouTube ↗</a></p>
+  {% endif %}
 
-  <button id="romanize-btn" class="btn" type="button">Show Roman Urdu</button>
-
-  <details class="export">
-    <summary class="btn">Export .docx</summary>
-    <div class="export-menu">
-      <label>Script
-        <select id="exp-script">
-          <option value="both">Both</option>
-          <option value="roman">Roman only</option>
-          <option value="urdu">Urdu only</option>
-        </select>
-      </label>
-      <label class="cbx"><input type="checkbox" id="exp-ts" checked> Include timestamps</label>
-      <a id="exp-link" class="btn" href="{{ url_for('video_export', video_id=video.id) }}">Download</a>
+  <div class="vtools">
+    {% if q and matched_ids %}
+    <div class="matchnav">
+      <button type="button" id="m-prev" class="icon-btn" aria-label="Previous match">‹</button>
+      <span id="m-count" class="muted"></span>
+      <button type="button" id="m-next" class="icon-btn" aria-label="Next match">›</button>
     </div>
-  </details>
+    {% endif %}
+
+    <div class="seg" id="scriptfilter">
+      <button type="button" data-mode="both" class="on">Both</button>
+      <button type="button" data-mode="roman">Roman</button>
+      <button type="button" data-mode="urdu">Urdu</button>
+    </div>
+
+    <button id="romanize-btn" class="btn" type="button">Show Roman Urdu</button>
+
+    <details class="export">
+      <summary class="btn">Export .docx</summary>
+      <div class="export-menu">
+        <label>Script
+          <select id="exp-script">
+            <option value="both">Both</option>
+            <option value="roman">Roman only</option>
+            <option value="urdu">Urdu only</option>
+          </select>
+        </label>
+        <label class="cbx"><input type="checkbox" id="exp-ts" checked> Include timestamps</label>
+        <a id="exp-link" class="btn" href="{{ url_for('video_export', video_id=video.id) }}">Download</a>
+      </div>
+    </details>
+  </div>
 </div>
 
 <div id="romanize-progress" class="progress" hidden>
