@@ -179,6 +179,22 @@
     scriptSel.addEventListener('change', rebuild);
     tsBox.addEventListener('change', rebuild);
     rebuild();
+    link.addEventListener('click', async function (e) {
+      var empties = [].slice.call(document.querySelectorAll('.roman[data-seg]'))
+        .filter(function (el) { return !el.textContent.trim(); });
+      var needsRoman = (scriptSel.value === 'roman' || scriptSel.value === 'both') && empties.length;
+      if (!needsRoman) return;
+      e.preventDefault();
+      var prev = link.textContent; link.classList.add('disabled');
+      try {
+        await window.VT.romanizeVideo(VIDEO_ID, function (p) { link.textContent = 'Romanizing ' + Math.round(p) + '%…'; });
+        var byId = {}, ids = [];
+        empties.forEach(function (el) { byId[el.getAttribute('data-seg')] = el; ids.push(el.getAttribute('data-seg')); });
+        await window.VT.romanizeIds(ids, byId, function () {});
+        link.textContent = prev; link.classList.remove('disabled');
+        var a = document.createElement('a'); a.href = link.href; document.body.appendChild(a); a.click(); a.remove();
+      } catch (err) { link.textContent = prev; link.classList.remove('disabled'); }
+    });
   })();
 
   // ---- background romanization with progress + notification ----------------

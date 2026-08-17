@@ -27,16 +27,29 @@ def _run_transcribe(conn, job_id, job):
                     detail=f"transcribed {n} segments (video {video_id})")
 
 
-def _run_romanize(conn, job_id, job):
-    video_id = job["video_id"]
+def _progress_updater(conn, job_id, label="{done}/{total}"):
+    last = [0.0]
 
     def on_progress(done, total):
-        pct = (100.0 * done / total) if total else 100.0
-        jobs.update(conn, job_id, detail=f"{done}/{total}", progress=round(pct, 1))
+        pct = round((100.0 * done / total) if total else 100.0, 1)
+        # avoid a DB write on every tiny step of a huge job
+        if pct - last[0] >= 0.1 or pct >= 100:
+            last[0] = pct
+            jobs.update(conn, job_id, detail=label.format(done=done, total=total), progress=pct)
 
-    done, total = transliterate.romanize_video(conn, video_id, progress=on_progress)
-    jobs.update(conn, job_id, status="done", progress=100,
-                detail=f"romanized {done}/{total} lines")
+    return on_progress
+
+
+def _run_romanize(conn, job_id, job):
+    done, total = transliterate.romanize_video(
+        conn, job["video_id"], progress=_progress_updater(conn, job_id))
+    jobs.update(conn, job_id, status="done", progress=100, detail=f"romanized {done}/{total} lines")
+
+
+def _run_romanize_all(conn, job_id, job):
+    done, total = transliterate.romanize_all(
+        conn, progress=_progress_updater(conn, job_id, "{done} / {total} lines"))
+    jobs.update(conn, job_id, status="done", progress=100, detail=f"romanized {done}/{total} lines")
 
 
 def process(job_id):
@@ -45,6 +58,8 @@ def process(job_id):
         job = jobs.get(conn, job_id)
         if job["kind"] == "romanize":
             _run_romanize(conn, job_id, job)
+        elif job["kind"] == "romanize_all":
+            _run_romanize_all(conn, job_id, job)
         else:
             _run_transcribe(conn, job_id, job)
     except transcribe.TranscribeError as exc:
@@ -57,6 +72,12 @@ def process(job_id):
 
 def main(poll_seconds=5):
     db.init_db()
+    # A job left 'running' means a previous worker was interrupted — resume it.
+    conn = db.connect()
+    try:
+        jobs.requeue_running(conn)
+    finally:
+        conn.close()
     while True:
         conn = db.connect()
         try:

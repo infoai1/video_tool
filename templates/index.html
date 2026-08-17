@@ -303,9 +303,11 @@ python cli.py transliterate</pre>
       go(cur, false);
     }
 
-    // Romanize the whole transcript (background, with % on the button), then
-    // fill every line so Export can include Roman.
     var rbtn = panel.querySelector('.romanize-all');
+    var expLink = panel.querySelector('.exp-link');
+    var expScript = panel.querySelector('.exp-script');
+    var expTs = panel.querySelector('.exp-ts');
+
     function emptyRomanIds() {
       var byId = {}, ids = [];
       panel.querySelectorAll('.roman[data-seg]').forEach(function (el) {
@@ -313,23 +315,26 @@ python cli.py transliterate</pre>
       });
       return { byId: byId, ids: ids };
     }
-    if (!emptyRomanIds().ids.length) { rbtn.textContent = 'Romanized'; rbtn.disabled = true; rbtn.classList.add('done'); }
+    var romanized = !emptyRomanIds().ids.length;
+    function markDone() { romanized = true; rbtn.textContent = 'Romanized'; rbtn.disabled = true; rbtn.classList.add('done'); }
+    if (romanized) markDone();
+
+    // Romanize the whole transcript (background job, % on the button), then fill
+    // every line. Shared by the button and by Export.
+    async function ensureRomanized(onPct) {
+      if (romanized) return;
+      await window.VT.romanizeVideo(data.id, onPct);
+      var e = emptyRomanIds();
+      if (e.ids.length) await window.VT.romanizeIds(e.ids, e.byId, function (el) { window.VT.highlight(el, terms); });
+      markDone();
+    }
     rbtn.addEventListener('click', async function () {
-      rbtn.disabled = true; rbtn.textContent = 'Romanizing…';
-      try {
-        await window.VT.romanizeVideo(data.id, function (pct) { rbtn.textContent = 'Romanizing ' + Math.round(pct) + '%'; });
-        var e = emptyRomanIds();
-        if (e.ids.length) await window.VT.romanizeIds(e.ids, e.byId, function (el) { window.VT.highlight(el, terms); });
-        rbtn.textContent = 'Romanized'; rbtn.classList.add('done');
-      } catch (err) {
-        rbtn.disabled = false; rbtn.textContent = 'Romanize';
-      }
+      rbtn.disabled = true;
+      try { await ensureRomanized(function (p) { rbtn.textContent = 'Romanizing ' + Math.round(p) + '%'; }); }
+      catch (e) { rbtn.disabled = false; rbtn.textContent = 'Romanize'; }
     });
 
-    // Export .docx link reflects the chosen script + timestamps.
-    var expLink = panel.querySelector('.exp-link');
-    var expScript = panel.querySelector('.exp-script');
-    var expTs = panel.querySelector('.exp-ts');
+    // Export .docx — auto-romanizes first when the file needs Roman.
     function rebuildExport() {
       expLink.href = '/video/' + data.id + '/export.docx?script=' + expScript.value +
         '&timestamps=' + (expTs.checked ? '1' : '0');
@@ -337,6 +342,21 @@ python cli.py transliterate</pre>
     expScript.addEventListener('change', rebuildExport);
     expTs.addEventListener('change', rebuildExport);
     rebuildExport();
+    expLink.addEventListener('click', async function (e) {
+      var needsRoman = (expScript.value === 'roman' || expScript.value === 'both') && !romanized;
+      if (!needsRoman) return;  // Urdu-only, or already romanized → normal download
+      e.preventDefault();
+      var prev = expLink.textContent;
+      expLink.classList.add('disabled');
+      try {
+        rbtn.disabled = true;
+        await ensureRomanized(function (p) { expLink.textContent = 'Romanizing ' + Math.round(p) + '%…'; });
+        expLink.textContent = prev; expLink.classList.remove('disabled');
+        var a = document.createElement('a'); a.href = expLink.href; document.body.appendChild(a); a.click(); a.remove();
+      } catch (err) {
+        expLink.textContent = prev; expLink.classList.remove('disabled');
+      }
+    });
   }
 
   document.querySelectorAll('.act.expand').forEach(function (btn) {

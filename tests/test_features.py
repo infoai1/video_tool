@@ -37,6 +37,39 @@ def test_romanize_video_reports_progress_and_fills(tmp_path):
     conn.close()
 
 
+def test_romanize_all_drains_backlog(tmp_path):
+    conn, vid = _seed_video(str(tmp_path / "roman.db"))  # 3 pending segments
+    seen = []
+    done, total = transliterate.romanize_all(
+        conn, progress=lambda d, t: seen.append((d, t)),
+        translit_batch=lambda b: {s: "x" for s, _u, _t in b},
+    )
+    assert (done, total) == (3, 3)
+    pending = conn.execute("SELECT COUNT(*) FROM segments WHERE roman_text IS NULL").fetchone()[0]
+    assert pending == 0 and seen[0] == (0, 3) and seen[-1] == (3, 3)
+    conn.close()
+
+
+def test_romanize_all_endpoint_and_requeue(tmp_path, monkeypatch):
+    import jobs
+
+    conn, vid = _seed_video(str(tmp_path / "roman.db"))
+    # a stale 'running' job is resumed on worker start
+    jid = jobs.enqueue_romanize_all(conn)
+    jobs.update(conn, jid, status="running")
+    jobs.requeue_running(conn)
+    assert jobs.get(conn, jid)["status"] == "queued"
+    # claim prefers non-bulk work first
+    jid2 = jobs.enqueue_romanize(conn, vid)
+    assert jobs.claim(conn) == jid2  # the per-video job jumps ahead of romanize_all
+    conn.close()
+
+    monkeypatch.setattr(__import__("app").db.config, "DB_PATH", str(tmp_path / "roman.db"))
+    import app as appmod
+    r = appmod.app.test_client().post("/api/romanize_all")
+    assert r.get_json()["ok"] is True
+
+
 def test_export_docx_variants(tmp_path):
     conn, vid = _seed_video(str(tmp_path / "roman.db"))
     transliterate.romanize_video(conn, vid, translit_batch=lambda b: {s: "roman" for s, _u, _t in b})

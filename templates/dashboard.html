@@ -12,6 +12,55 @@
     <div class="stat"><span class="num">{{ "%.1f"|format(stats.pct) }}%</span><span class="lbl">romanized ({{ "{:,}".format(stats.romanized) }})</span></div>
   </div>
 
+  <div class="bulk">
+    {% if stats.pending %}
+      <button id="rall-btn" class="btn"{% if active_all_job %} hidden{% endif %}>
+        Romanize all {{ "{:,}".format(stats.pending) }} remaining lines
+      </button>
+      <span id="rall-hint" class="muted"{% if active_all_job %} hidden{% endif %}>≈ ${{ stats.est }} · runs in the background</span>
+      <div id="rall-progress" class="progress"{% if not active_all_job %} hidden{% endif %}>
+        <div class="bar"><div class="bar-fill"></div></div>
+        <span class="ptext muted"></span>
+      </div>
+    {% else %}
+      <span class="muted">Every line is romanized 🎉</span>
+    {% endif %}
+  </div>
+  <script>
+    (function () {
+      var btn = document.getElementById('rall-btn');
+      var hint = document.getElementById('rall-hint');
+      var wrap = document.getElementById('rall-progress');
+      if (!wrap) return;
+      var fill = wrap.querySelector('.bar-fill');
+      var ptext = wrap.querySelector('.ptext');
+      function poll(jid) {
+        fetch('/api/job/' + jid).then(function (r) { return r.json(); }).then(function (j) {
+          if (j.error) return;
+          fill.style.width = (j.progress || 0) + '%';
+          ptext.textContent = j.status === 'done'
+            ? 'Done — reloading…'
+            : 'Romanizing ' + Math.round(j.progress || 0) + '% (' + (j.detail || '') + ')';
+          if (j.status === 'done') { setTimeout(function () { location.reload(); }, 1500); return; }
+          if (j.status === 'error') { ptext.textContent = 'Error: ' + (j.detail || ''); return; }
+          setTimeout(function () { poll(jid); }, 3000);
+        }).catch(function () { setTimeout(function () { poll(jid); }, 5000); });
+      }
+      if (btn) btn.addEventListener('click', async function () {
+        btn.hidden = true; if (hint) hint.hidden = true; wrap.hidden = false;
+        ptext.textContent = 'Starting…';
+        try {
+          var r = await fetch('/api/romanize_all', { method: 'POST' });
+          var j = await r.json();
+          if (!j.ok) { ptext.textContent = j.error || 'Could not start.'; return; }
+          if (j.status === 'done') { location.reload(); return; }
+          poll(j.job_id);
+        } catch (e) { ptext.textContent = 'Could not start — try again.'; }
+      });
+      {% if active_all_job %}poll({{ active_all_job }});{% endif %}
+    })();
+  </script>
+
   <h2>New transcriptions</h2>
   {% if job_list %}
     <table class="tbl">

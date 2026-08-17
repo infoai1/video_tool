@@ -61,6 +61,32 @@ def active_romanize(conn, video_id):
     ).fetchone()
 
 
+def enqueue_romanize_all(conn):
+    now = _now()
+    cur = conn.execute(
+        "INSERT INTO jobs (kind, title, status, detail, created_at, updated_at) "
+        "VALUES ('romanize_all', 'Whole library', 'queued', 'queued', ?, ?)",
+        (now, now),
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def active_romanize_all(conn):
+    return conn.execute(
+        "SELECT id, status FROM jobs WHERE kind='romanize_all' "
+        "AND status IN ('queued','running') ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+
+
+def requeue_running(conn):
+    """Reset jobs left 'running' by a previous worker (e.g. after a restart)
+    back to 'queued'. Safe: transcription re-checks the library and romanization
+    only touches still-pending segments."""
+    conn.execute("UPDATE jobs SET status='queued', detail='resuming…' WHERE status='running'")
+    conn.commit()
+
+
 def get(conn, job_id):
     return as_dict(conn.execute(f"{_SELECT} WHERE id = ?", (job_id,)).fetchone())
 
@@ -70,8 +96,13 @@ def recent(conn, limit=20):
 
 
 def claim(conn):
-    """Atomically take the oldest queued job. Returns its id, or None."""
-    row = conn.execute("SELECT id FROM jobs WHERE status = 'queued' ORDER BY id LIMIT 1").fetchone()
+    """Atomically take the next queued job. Quick jobs (transcribe / per-video
+    romanize) are claimed ahead of a queued whole-library 'romanize_all', so a
+    pending bulk run doesn't make a user wait. Returns the job id, or None."""
+    row = conn.execute(
+        "SELECT id FROM jobs WHERE status='queued' "
+        "ORDER BY (kind='romanize_all'), id LIMIT 1"
+    ).fetchone()
     if row is None:
         return None
     cur = conn.execute(

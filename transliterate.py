@@ -301,6 +301,39 @@ def romanize_video(conn, video_id, progress=None, translit_batch=None, model=Non
     return done, total
 
 
+def romanize_all(conn, progress=None, translit_batch=None, model=None):
+    """Transliterate every pending segment across the whole library, reporting
+    progress against the full corpus. Resumable (only NULL roman_text) and
+    idempotent. Returns (done, total)."""
+    total = conn.execute("SELECT COUNT(*) FROM segments").fetchone()[0]
+    done = conn.execute("SELECT COUNT(*) FROM segments WHERE roman_text IS NOT NULL").fetchone()[0]
+    model = model or config.MODEL
+    call = translit_batch or (lambda b: _default_translit_batch(b, model))
+    if progress:
+        progress(done, total)
+    while True:
+        rows = conn.execute(
+            "SELECT id, urdu_text FROM segments WHERE roman_text IS NULL ORDER BY id LIMIT ?",
+            (config.BATCH_SIZE,),
+        ).fetchall()
+        if not rows:
+            break
+        chunk = [(r[0], r[1], None) for r in rows]
+        romans = call(chunk)
+        wrote = 0
+        for seg_id, _u, _t in chunk:
+            if seg_id in romans:
+                _write_roman(conn, seg_id, romans[seg_id], model)
+                wrote += 1
+        conn.commit()
+        if wrote == 0:  # persistent failure on this batch — stop rather than spin
+            break
+        done += wrote
+        if progress:
+            progress(done, total)
+    return done, total
+
+
 def status(db_path=None):
     """(done, pending) transliteration counts, for the CLI status command."""
     if not db.exists(db_path):

@@ -286,6 +286,27 @@ def api_romanize_video():
     return jsonify({"ok": True, "job_id": job_id, "status": "queued", "progress": 0})
 
 
+@app.route("/api/romanize_all", methods=["POST"])
+def api_romanize_all():
+    """Enqueue a background pass that romanizes every pending line in the library."""
+    if not db.exists():
+        return jsonify({"ok": False, "error": "store not built yet"}), 503
+    conn = db.connect()
+    try:
+        pending = conn.execute(
+            "SELECT COUNT(*) FROM segments WHERE roman_text IS NULL"
+        ).fetchone()[0]
+        if pending == 0:
+            return jsonify({"ok": True, "job_id": None, "status": "done", "progress": 100})
+        active = jobs.active_romanize_all(conn)
+        if active:
+            return jsonify({"ok": True, "job_id": active[0], "status": active[1]})
+        job_id = jobs.enqueue_romanize_all(conn)
+    finally:
+        conn.close()
+    return jsonify({"ok": True, "job_id": job_id, "status": "queued", "progress": 0})
+
+
 @app.route("/api/job/<int:job_id>")
 def api_job(job_id):
     if not db.exists():
@@ -329,6 +350,11 @@ def dashboard():
             ).fetchone()[0],
         }
         stats["pct"] = (100.0 * stats["romanized"] / stats["segments"]) if stats["segments"] else 0.0
+        stats["pending"] = stats["segments"] - stats["romanized"]
+        # DeepSeek ≈ $0.00006 per segment.
+        stats["est"] = round(stats["pending"] * 0.00006, 2)
+        active_all = jobs.active_romanize_all(conn)
+        active_all_job = active_all[0] if active_all else None
         job_list = jobs.recent(conn, limit=15)
         romanized_rows = conn.execute(
             """
@@ -342,6 +368,7 @@ def dashboard():
         conn.close()
     return render_template(
         "dashboard.html", no_store=False, stats=stats, job_list=job_list,
+        active_all_job=active_all_job,
         romanized=[
             {"id": r[0], "title": r[1], "done": r[2], "total": r[3], "last": r[4]}
             for r in romanized_rows
