@@ -21,6 +21,7 @@ import json
 import re
 import subprocess
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import config
 import db
@@ -302,12 +303,45 @@ def run(limit=None, batch_size=None, model=None, translit_batch=None,
     return done
 
 
-def romanize_video(conn, video_id, progress=None, translit_batch=None, model=None):
+def _run_batches_concurrently(chunks, call, concurrency):
+    """Run `call(chunk)` for each chunk, up to `concurrency` at once. Each call
+    is a pure network round-trip with no shared state, so this is safe — only
+    the results come back to the caller, which writes them to the DB serially
+    on its single connection. A chunk whose call raises yields {} (its lines
+    stay pending and are retried on the next pass) rather than aborting the
+    whole batch of chunks.
+
+    Returns a list of {id: roman} dicts, same order as `chunks`.
+    """
+    if concurrency <= 1 or len(chunks) <= 1:
+        out = []
+        for c in chunks:
+            try:
+                out.append(call(c))
+            except Exception:
+                out.append({})
+        return out
+    results = [{}] * len(chunks)
+    with ThreadPoolExecutor(max_workers=concurrency) as ex:
+        futures = {ex.submit(call, c): i for i, c in enumerate(chunks)}
+        for fut in as_completed(futures):
+            i = futures[fut]
+            try:
+                results[i] = fut.result()
+            except Exception:
+                results[i] = {}
+    return results
+
+
+def romanize_video(conn, video_id, progress=None, translit_batch=None, model=None,
+                    concurrency=None):
     """Transliterate all of a video's pending segments, reporting progress.
 
-    `progress(done, total)` is called after each batch (done/total counted over
-    the whole video, including already-transliterated lines). Returns (done, total).
-    Used by the background romanize job so the user can keep browsing.
+    `progress(done, total)` is called after each round of batches (done/total
+    counted over the whole video, including already-transliterated lines).
+    Returns (done, total). Used by the background romanize job so the user can
+    keep browsing. Batches within a round run concurrently (see
+    config.ROMANIZE_CONCURRENCY) since each is an independent network call.
     """
     total = conn.execute(
         "SELECT COUNT(*) FROM segments WHERE video_id = ?", (video_id,)
@@ -321,46 +355,66 @@ def romanize_video(conn, video_id, progress=None, translit_batch=None, model=Non
     if progress:
         progress(done, total)
     model = model or config.MODEL
+    concurrency = concurrency or config.ROMANIZE_CONCURRENCY
     call = translit_batch or (lambda b: _default_translit_batch(b, model))
-    for i in range(0, len(rows), config.BATCH_SIZE):
-        chunk = [(r[0], r[1], None) for r in rows[i : i + config.BATCH_SIZE]]
-        romans = call(chunk)
-        for seg_id, _u, _t in chunk:
-            if seg_id in romans:
-                _write_roman(conn, seg_id, romans[seg_id], model)
+    round_size = config.BATCH_SIZE * concurrency
+    for start in range(0, len(rows), round_size):
+        round_rows = rows[start : start + round_size]
+        chunks = [
+            [(r[0], r[1], None) for r in round_rows[i : i + config.BATCH_SIZE]]
+            for i in range(0, len(round_rows), config.BATCH_SIZE)
+        ]
+        results = _run_batches_concurrently(chunks, call, concurrency)
+        wrote = 0
+        for chunk, romans in zip(chunks, results):
+            for seg_id, _u, _t in chunk:
+                if seg_id in romans:
+                    _write_roman(conn, seg_id, romans[seg_id], model)
+                    wrote += 1
         conn.commit()
-        done += len(chunk)
+        done += wrote
         if progress:
             progress(done, total)
     return done, total
 
 
-def romanize_all(conn, progress=None, translit_batch=None, model=None):
+def romanize_all(conn, progress=None, translit_batch=None, model=None, concurrency=None):
     """Transliterate every pending segment across the whole library, reporting
     progress against the full corpus. Resumable (only NULL roman_text) and
-    idempotent. Returns (done, total)."""
+    idempotent. Returns (done, total).
+
+    Fetches `concurrency` batches at a time and runs them concurrently (each
+    is an independent network round-trip; see config.ROMANIZE_CONCURRENCY) —
+    this is what makes a 400k+ line backlog finish in hours instead of days.
+    All DB writes still happen serially on this one connection.
+    """
     total = conn.execute("SELECT COUNT(*) FROM segments").fetchone()[0]
     done = conn.execute("SELECT COUNT(*) FROM segments WHERE roman_text IS NOT NULL").fetchone()[0]
     model = model or config.MODEL
+    concurrency = concurrency or config.ROMANIZE_CONCURRENCY
     call = translit_batch or (lambda b: _default_translit_batch(b, model))
     if progress:
         progress(done, total)
     while True:
         rows = conn.execute(
             "SELECT id, urdu_text FROM segments WHERE roman_text IS NULL ORDER BY id LIMIT ?",
-            (config.BATCH_SIZE,),
+            (config.BATCH_SIZE * concurrency,),
         ).fetchall()
         if not rows:
             break
-        chunk = [(r[0], r[1], None) for r in rows]
-        romans = call(chunk)
+        chunks = [
+            [(r[0], r[1], None) for r in rows[i : i + config.BATCH_SIZE]]
+            for i in range(0, len(rows), config.BATCH_SIZE)
+        ]
+        results = _run_batches_concurrently(chunks, call, concurrency)
         wrote = 0
-        for seg_id, _u, _t in chunk:
-            if seg_id in romans:
-                _write_roman(conn, seg_id, romans[seg_id], model)
-                wrote += 1
+        for chunk, romans in zip(chunks, results):
+            for seg_id, _u, _t in chunk:
+                if seg_id in romans:
+                    _write_roman(conn, seg_id, romans[seg_id], model)
+                    wrote += 1
         conn.commit()
-        if wrote == 0:  # persistent failure on this batch — stop rather than spin
+        if wrote == 0:  # persistent failure on this round — stop rather than spin
             break
         done += wrote
         if progress:

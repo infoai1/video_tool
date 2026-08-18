@@ -45,6 +45,11 @@ MODEL = os.environ.get("VIDEO_TOOL_MODEL", _DEFAULT_MODEL)
 # How many segments to send to the model in one request. Larger batches amortise
 # the fixed prompt overhead; too large and one bad segment stalls the whole call.
 BATCH_SIZE = int(os.environ.get("VIDEO_TOOL_BATCH_SIZE", "25"))
+# How many batches to run concurrently during bulk romanization. Each batch is
+# one network round-trip (~10s) with no shared state, so this is the main
+# lever on wall-clock time for a large backlog; DB writes stay serialized on
+# the single connection regardless of this value, so it's safe to raise.
+ROMANIZE_CONCURRENCY = int(os.environ.get("VIDEO_TOOL_ROMANIZE_CONCURRENCY", "8"))
 
 # Where user feedback / bug reports are appended (one JSON object per line).
 FEEDBACK_PATH = os.environ.get("VIDEO_TOOL_FEEDBACK", "feedback.jsonl")
