@@ -50,6 +50,73 @@ def test_romanize_all_drains_backlog(tmp_path):
     conn.close()
 
 
+def test_complete_with_retry_recovers_from_transient_failure(monkeypatch):
+    # a model call that fails twice then succeeds must be retried, not given up on
+    calls = {"n": 0}
+
+    def flaky(system, user, model, max_tokens):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise ConnectionError("simulated blip")
+        return '{"segments":[{"id":1,"roman":"ok"}]}'
+
+    monkeypatch.setattr(transliterate, "_complete", flaky)
+    out = transliterate._complete_with_retry("sys", "usr", "model", 100, attempts=3)
+    assert out == '{"segments":[{"id":1,"roman":"ok"}]}'
+    assert calls["n"] == 3
+
+
+def test_complete_watchdog_enforces_wall_clock_deadline(monkeypatch):
+    # some OpenRouter backends have been observed to hold a connection open far
+    # past any socket-level timeout; the watchdog must still give up on time.
+    import time
+
+    def hangs_forever(system, user, model, max_tokens):
+        time.sleep(10)
+        return "unreachable"
+
+    monkeypatch.setattr(transliterate, "_complete", hangs_forever)
+    t0 = time.time()
+    try:
+        transliterate._complete_watchdog("s", "u", "m", 10, deadline=0.3)
+        assert False, "watchdog did not raise on timeout"
+    except transliterate._CallTimeout:
+        assert time.time() - t0 < 2.0
+
+
+def test_romanize_all_poison_chunk_does_not_block_healthy_ones(tmp_path):
+    """A batch whose whole network call fails (already exhausted its own
+    retries) must not permanently block every OTHER pending segment behind
+    it — this corpus has real outlier segments (19k+ char bulk-text imports)
+    that could plausibly choke a model call for a multi-day unattended run."""
+    conn, _ = _seed_video(str(tmp_path / "roman.db"))
+    conn.execute(
+        "INSERT INTO videos (youtube_url, title) VALUES ('https://youtu.be/zzzzzzzzzzz', 'V2')"
+    )
+    vid2 = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    for i in range(25):
+        conn.execute(
+            "INSERT INTO segments (video_id, start_time, urdu_text, urdu_norm) VALUES (?,?,?,?)",
+            (vid2, i, "poison", "poison"),
+        )
+    conn.commit()
+
+    def call(batch):
+        if any(u == "poison" for _sid, u, _t in batch):
+            return {}  # simulates a call that already exhausted its own retries
+        return {sid: "roman" for sid, _u, _t in batch}
+
+    done, total = transliterate.romanize_all(conn, translit_batch=call, concurrency=2)
+    good_done = conn.execute(
+        "SELECT COUNT(*) FROM segments WHERE urdu_text != 'poison' AND roman_text IS NOT NULL"
+    ).fetchone()[0]
+    poison_done = conn.execute(
+        "SELECT COUNT(*) FROM segments WHERE urdu_text = 'poison' AND roman_text IS NOT NULL"
+    ).fetchone()[0]
+    assert good_done == 3 and poison_done == 0, (good_done, poison_done)
+    conn.close()
+
+
 def test_romanize_all_endpoint_and_requeue(tmp_path, monkeypatch):
     import jobs
 

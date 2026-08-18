@@ -23,6 +23,7 @@ import subprocess
 import time
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 
 import config
 import db
@@ -200,15 +201,40 @@ def _complete(system, user, model, max_tokens):
     return _anthropic_complete(system, user, model, max_tokens)
 
 
-def _complete_with_retry(system, user, model, max_tokens, attempts=3):
+class _CallTimeout(Exception):
+    """A model call exceeded its wall-clock deadline (see _complete_watchdog)."""
+
+
+# Some OpenRouter backend providers hold the connection open and trickle data
+# slowly enough that urllib's socket-level `timeout` never fires — observed on
+# this deployment: a 25-line batch that normally takes 10-20s instead ran past
+# 5 minutes with no error. A per-call socket timeout can't catch that, so this
+# enforces a real wall-clock deadline: the call runs in a worker thread and if
+# it hasn't returned by `deadline` seconds, the caller gives up and treats it
+# as a failure (to retry / move on). The abandoned thread is left to finish or
+# die on its own — Python can't safely kill a thread mid-network-call — which
+# is an acceptable cost for a background job that must not stall for minutes.
+_watchdog_pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="translit-watchdog")
+
+
+def _complete_watchdog(system, user, model, max_tokens, deadline=45):
+    fut = _watchdog_pool.submit(_complete, system, user, model, max_tokens)
+    try:
+        return fut.result(timeout=deadline)
+    except FuturesTimeoutError:
+        raise _CallTimeout(f"model call exceeded {deadline}s")
+
+
+def _complete_with_retry(system, user, model, max_tokens, attempts=3, deadline=45):
     """_complete, retrying transient failures (timeouts, connection resets,
-    momentary rate limits) with backoff. A multi-day unattended job like
-    romanize_all would otherwise lose a whole batch — or, worse, stop
-    early — to one network hiccup."""
+    momentary rate limits, or a call that never returns — see
+    _complete_watchdog) with backoff. A multi-day unattended job like
+    romanize_all would otherwise lose a whole batch — or, worse, stall
+    indefinitely — on one bad request."""
     last_exc = None
     for i in range(attempts):
         try:
-            return _complete(system, user, model, max_tokens)
+            return _complete_watchdog(system, user, model, max_tokens, deadline)
         except Exception as exc:  # noqa: BLE001 — any of urllib/subprocess/SDK errors
             last_exc = exc
             if i < attempts - 1:
@@ -401,12 +427,23 @@ def romanize_all(conn, progress=None, translit_batch=None, model=None, concurren
     progress against the full corpus. Resumable (only NULL roman_text) and
     idempotent. Returns (done, total).
 
-    A backlog this size runs unattended for a long time, so a single bad round
-    (one transient network blip, briefly past _complete_with_retry's own
-    retries) must not silently end the whole job — only `max_consecutive_
-    failures` zero-progress rounds IN A ROW does that, on the theory that a
-    truly broken batch (a segment the model can never process) shouldn't spin
-    forever either. Any successful round resets the counter.
+    Rows are fetched oldest-id-first, so a segment whose *entire* batch call
+    fails (not just an id the model happened to omit — see the `skip_ids`
+    logic below) would otherwise be re-fetched at the front of every future
+    round forever, permanently blocking every healthy segment behind it. This
+    corpus really does contain outlier segments (some 19,000+ characters,
+    imported as bulk un-timestamped text) that could plausibly choke a model
+    call. So a wholesale-failed chunk's ids are skipped for the rest of THIS
+    run — they're simply NULL again next time romanize_all is invoked — and
+    the job keeps making progress on everything else.
+
+    Separately, a backlog this size runs unattended for a long time, so a
+    single bad round (one transient network blip, briefly past
+    _complete_with_retry's own retries) must not silently end the whole job —
+    only `max_consecutive_failures` zero-progress rounds IN A ROW does that,
+    which by then means every fetchable row is either failing or skipped:
+    a genuine outage, not a poison segment. Any successful round resets the
+    counter.
     """
     total = conn.execute("SELECT COUNT(*) FROM segments").fetchone()[0]
     done = conn.execute("SELECT COUNT(*) FROM segments WHERE roman_text IS NOT NULL").fetchone()[0]
@@ -416,11 +453,21 @@ def romanize_all(conn, progress=None, translit_batch=None, model=None, concurren
     if progress:
         progress(done, total)
     consecutive_failures = 0
+    skip_ids = set()
     while True:
-        rows = conn.execute(
-            "SELECT id, urdu_text FROM segments WHERE roman_text IS NULL ORDER BY id LIMIT ?",
-            (config.BATCH_SIZE * concurrency,),
-        ).fetchall()
+        limit = config.BATCH_SIZE * concurrency
+        if skip_ids:
+            placeholders = ",".join("?" for _ in skip_ids)
+            rows = conn.execute(
+                f"SELECT id, urdu_text FROM segments WHERE roman_text IS NULL "
+                f"AND id NOT IN ({placeholders}) ORDER BY id LIMIT ?",
+                (*skip_ids, limit),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT id, urdu_text FROM segments WHERE roman_text IS NULL ORDER BY id LIMIT ?",
+                (limit,),
+            ).fetchall()
         if not rows:
             break
         chunks = [
@@ -430,6 +477,9 @@ def romanize_all(conn, progress=None, translit_batch=None, model=None, concurren
         results = _run_batches_concurrently(chunks, call, concurrency)
         wrote = 0
         for chunk, romans in zip(chunks, results):
+            if not romans:  # the whole call for this chunk failed — skip these ids for this run
+                skip_ids.update(seg_id for seg_id, _u, _t in chunk)
+                continue
             for seg_id, _u, _t in chunk:
                 if seg_id in romans:
                     _write_roman(conn, seg_id, romans[seg_id], model)
