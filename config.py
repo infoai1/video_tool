@@ -36,10 +36,14 @@ OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 CLAUDE_BIN = os.environ.get("VIDEO_TOOL_CLAUDE_BIN", "claude")
 CLI_TIMEOUT = int(os.environ.get("VIDEO_TOOL_CLI_TIMEOUT", "300"))
 
-# Transliteration model. Haiku is deliberately chosen: transliteration is a
-# high-volume, low-reasoning task, and Haiku is the cheapest capable model. The
-# native id works for anthropic and claude_cli; OpenRouter uses its own slug.
-_DEFAULT_MODEL = "anthropic/claude-haiku-4.5" if PROVIDER == "openrouter" else "claude-haiku-4-5"
+# Transliteration model. Transliteration is a high-volume, low-reasoning task,
+# so the cheapest FAST model wins. On OpenRouter, gemini-2.5-flash-lite is the
+# right default: measured on the live corpus it transliterated a 25-line batch
+# in ~10s at ~230 output-tok/s with clean results, versus ~50-90s for
+# deepseek-v4-flash (whose OpenRouter backends serve it at only ~50 tok/s —
+# same output size, ~5x slower wall-clock, and some backends returned
+# unparseable JSON). For anthropic/claude_cli the native Haiku id is used.
+_DEFAULT_MODEL = "google/gemini-2.5-flash-lite" if PROVIDER == "openrouter" else "claude-haiku-4-5"
 MODEL = os.environ.get("VIDEO_TOOL_MODEL", _DEFAULT_MODEL)
 
 # How many segments to send to the model in one request. Larger batches amortise
@@ -47,12 +51,16 @@ MODEL = os.environ.get("VIDEO_TOOL_MODEL", _DEFAULT_MODEL)
 BATCH_SIZE = int(os.environ.get("VIDEO_TOOL_BATCH_SIZE", "25"))
 # How many batches to run concurrently during bulk romanization. Each batch is
 # an independent network round-trip with no shared state, so DB writes stay
-# serialized on the caller's connection regardless of this value — but in
-# practice concurrent requests to the OpenRouter/DeepSeek endpoint have been
-# observed to stall indefinitely (queued server-side, past any client-side
-# timeout) rather than simply run slower. Default to sequential (1); raise
-# this only after confirming concurrent requests behave on your provider.
-ROMANIZE_CONCURRENCY = int(os.environ.get("VIDEO_TOOL_ROMANIZE_CONCURRENCY", "1"))
+# serialized on the caller's connection regardless of this value. With a
+# reliable, well-provisioned endpoint (the gemini-2.5-flash-lite default),
+# concurrency scales throughput almost linearly — measured on the live corpus:
+# 1 -> ~210 lines/min, 4 -> ~600, 8 -> ~1680, with no errors. (An earlier
+# deepseek-v4-flash backend instead stalled under concurrency, past any
+# client-side timeout — hence the per-call wall-clock watchdog in
+# transliterate.py, which makes a stuck call fail fast instead of wedging the
+# job.) 8 is a good default for gemini; drop toward 1 if a provider rate-limits
+# or misbehaves under load.
+ROMANIZE_CONCURRENCY = int(os.environ.get("VIDEO_TOOL_ROMANIZE_CONCURRENCY", "8"))
 
 # Where user feedback / bug reports are appended (one JSON object per line).
 FEEDBACK_PATH = os.environ.get("VIDEO_TOOL_FEEDBACK", "feedback.jsonl")
