@@ -46,10 +46,13 @@ MODEL = os.environ.get("VIDEO_TOOL_MODEL", _DEFAULT_MODEL)
 # the fixed prompt overhead; too large and one bad segment stalls the whole call.
 BATCH_SIZE = int(os.environ.get("VIDEO_TOOL_BATCH_SIZE", "25"))
 # How many batches to run concurrently during bulk romanization. Each batch is
-# one network round-trip (~10s) with no shared state, so this is the main
-# lever on wall-clock time for a large backlog; DB writes stay serialized on
-# the single connection regardless of this value, so it's safe to raise.
-ROMANIZE_CONCURRENCY = int(os.environ.get("VIDEO_TOOL_ROMANIZE_CONCURRENCY", "8"))
+# an independent network round-trip with no shared state, so DB writes stay
+# serialized on the caller's connection regardless of this value — but in
+# practice concurrent requests to the OpenRouter/DeepSeek endpoint have been
+# observed to stall indefinitely (queued server-side, past any client-side
+# timeout) rather than simply run slower. Default to sequential (1); raise
+# this only after confirming concurrent requests behave on your provider.
+ROMANIZE_CONCURRENCY = int(os.environ.get("VIDEO_TOOL_ROMANIZE_CONCURRENCY", "1"))
 
 # Where user feedback / bug reports are appended (one JSON object per line).
 FEEDBACK_PATH = os.environ.get("VIDEO_TOOL_FEEDBACK", "feedback.jsonl")

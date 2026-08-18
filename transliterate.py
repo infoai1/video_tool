@@ -20,6 +20,7 @@ import datetime
 import json
 import re
 import subprocess
+import time
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -199,9 +200,25 @@ def _complete(system, user, model, max_tokens):
     return _anthropic_complete(system, user, model, max_tokens)
 
 
+def _complete_with_retry(system, user, model, max_tokens, attempts=3):
+    """_complete, retrying transient failures (timeouts, connection resets,
+    momentary rate limits) with backoff. A multi-day unattended job like
+    romanize_all would otherwise lose a whole batch — or, worse, stop
+    early — to one network hiccup."""
+    last_exc = None
+    for i in range(attempts):
+        try:
+            return _complete(system, user, model, max_tokens)
+        except Exception as exc:  # noqa: BLE001 — any of urllib/subprocess/SDK errors
+            last_exc = exc
+            if i < attempts - 1:
+                time.sleep(2 * (i + 1))  # 2s, 4s, ...
+    raise last_exc
+
+
 def _default_translit_batch(batch, model=None):
     """Dispatch one batch to the configured provider. `batch` is (id, urdu, ...)."""
-    text = _complete(SYSTEM + _JSON_INSTRUCTION, _user_content(batch), model or config.MODEL, 8000)
+    text = _complete_with_retry(SYSTEM + _JSON_INSTRUCTION, _user_content(batch), model or config.MODEL, 8000)
     return _parse(text)
 
 
@@ -378,15 +395,18 @@ def romanize_video(conn, video_id, progress=None, translit_batch=None, model=Non
     return done, total
 
 
-def romanize_all(conn, progress=None, translit_batch=None, model=None, concurrency=None):
+def romanize_all(conn, progress=None, translit_batch=None, model=None, concurrency=None,
+                  max_consecutive_failures=5):
     """Transliterate every pending segment across the whole library, reporting
     progress against the full corpus. Resumable (only NULL roman_text) and
     idempotent. Returns (done, total).
 
-    Fetches `concurrency` batches at a time and runs them concurrently (each
-    is an independent network round-trip; see config.ROMANIZE_CONCURRENCY) —
-    this is what makes a 400k+ line backlog finish in hours instead of days.
-    All DB writes still happen serially on this one connection.
+    A backlog this size runs unattended for a long time, so a single bad round
+    (one transient network blip, briefly past _complete_with_retry's own
+    retries) must not silently end the whole job — only `max_consecutive_
+    failures` zero-progress rounds IN A ROW does that, on the theory that a
+    truly broken batch (a segment the model can never process) shouldn't spin
+    forever either. Any successful round resets the counter.
     """
     total = conn.execute("SELECT COUNT(*) FROM segments").fetchone()[0]
     done = conn.execute("SELECT COUNT(*) FROM segments WHERE roman_text IS NOT NULL").fetchone()[0]
@@ -395,6 +415,7 @@ def romanize_all(conn, progress=None, translit_batch=None, model=None, concurren
     call = translit_batch or (lambda b: _default_translit_batch(b, model))
     if progress:
         progress(done, total)
+    consecutive_failures = 0
     while True:
         rows = conn.execute(
             "SELECT id, urdu_text FROM segments WHERE roman_text IS NULL ORDER BY id LIMIT ?",
@@ -414,8 +435,12 @@ def romanize_all(conn, progress=None, translit_batch=None, model=None, concurren
                     _write_roman(conn, seg_id, romans[seg_id], model)
                     wrote += 1
         conn.commit()
-        if wrote == 0:  # persistent failure on this round — stop rather than spin
-            break
+        if wrote == 0:
+            consecutive_failures += 1
+            if consecutive_failures >= max_consecutive_failures:
+                break  # persistent, not transient — stop rather than spin forever
+            continue
+        consecutive_failures = 0
         done += wrote
         if progress:
             progress(done, total)
