@@ -20,10 +20,10 @@ import datetime
 import json
 import re
 import subprocess
+import threading
 import time
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from concurrent.futures import TimeoutError as FuturesTimeoutError
 
 import config
 import db
@@ -208,21 +208,37 @@ class _CallTimeout(Exception):
 # Some OpenRouter backend providers hold the connection open and trickle data
 # slowly enough that urllib's socket-level `timeout` never fires — observed on
 # this deployment: a 25-line batch that normally takes 10-20s instead ran past
-# 5 minutes with no error. A per-call socket timeout can't catch that, so this
-# enforces a real wall-clock deadline: the call runs in a worker thread and if
-# it hasn't returned by `deadline` seconds, the caller gives up and treats it
-# as a failure (to retry / move on). The abandoned thread is left to finish or
-# die on its own — Python can't safely kill a thread mid-network-call — which
-# is an acceptable cost for a background job that must not stall for minutes.
-_watchdog_pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="translit-watchdog")
-
-
+# 5 minutes with no error, and py-spy showed the thread genuinely blocked
+# inside ssl.read()/_read_chunked, not spinning. A per-call socket timeout
+# can't catch that, so this enforces a real wall-clock deadline instead: the
+# call runs in its own dedicated daemon thread, and if it hasn't returned by
+# `deadline` seconds, the caller gives up and treats it as a failure (to
+# retry / move on). The thread itself is abandoned — Python can't safely kill
+# a thread mid-network-call — and either finishes on its own later (result
+# discarded) or blocks forever; either way costs one idle OS thread, which is
+# cheap. (An earlier version pulled these threads from a small shared
+# ThreadPoolExecutor — a real bug: once enough calls got abandoned, EVERY
+# pool slot was permanently stuck, so every *subsequent* call queued behind
+# them and timed out immediately without ever actually running, making a
+# slow-but-alive endpoint look completely dead. A dedicated thread per call
+# has no shared capacity to exhaust.)
 def _complete_watchdog(system, user, model, max_tokens, deadline=45):
-    fut = _watchdog_pool.submit(_complete, system, user, model, max_tokens)
-    try:
-        return fut.result(timeout=deadline)
-    except FuturesTimeoutError:
+    box = {}
+
+    def run():
+        try:
+            box["result"] = _complete(system, user, model, max_tokens)
+        except Exception as exc:  # noqa: BLE001 — surfaced via box, not a bare thread crash
+            box["error"] = exc
+
+    t = threading.Thread(target=run, daemon=True)
+    t.start()
+    t.join(timeout=deadline)
+    if t.is_alive():
         raise _CallTimeout(f"model call exceeded {deadline}s")
+    if "error" in box:
+        raise box["error"]
+    return box["result"]
 
 
 def _complete_with_retry(system, user, model, max_tokens, attempts=3, deadline=45):

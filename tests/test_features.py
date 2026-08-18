@@ -84,6 +84,40 @@ def test_complete_watchdog_enforces_wall_clock_deadline(monkeypatch):
         assert time.time() - t0 < 2.0
 
 
+def test_watchdog_abandoned_calls_do_not_exhaust_capacity(monkeypatch):
+    """Regression for a real production incident: the watchdog originally
+    pulled its worker thread from a small SHARED ThreadPoolExecutor. Once
+    enough calls got abandoned (a genuinely stuck backend, confirmed live via
+    py-spy — threads blocked inside ssl.read()/_read_chunked, not spinning),
+    every pool slot was permanently occupied, so every *subsequent* call
+    queued behind them and timed out immediately without ever actually
+    running — making a slow-but-alive endpoint look completely dead. Each
+    call must get its own dedicated thread so abandoned ones can never block
+    a later, unrelated call."""
+    import time
+
+    hang_count = {"n": 0}
+
+    def mostly_hangs(system, user, model, max_tokens):
+        hang_count["n"] += 1
+        if hang_count["n"] <= 6:
+            time.sleep(30)  # simulates a permanently-stuck call
+            return "unreachable"
+        return "fast response"
+
+    monkeypatch.setattr(transliterate, "_complete", mostly_hangs)
+    for _ in range(6):  # fire and abandon 6 "stuck" calls
+        try:
+            transliterate._complete_watchdog("s", "u", "m", 10, deadline=0.3)
+        except transliterate._CallTimeout:
+            pass
+    t0 = time.time()
+    result = transliterate._complete_watchdog("s", "u", "m", 10, deadline=5)
+    dt = time.time() - t0
+    assert result == "fast response"
+    assert dt < 2.0, "call was blocked behind abandoned threads! took %.2fs" % dt
+
+
 def test_romanize_all_poison_chunk_does_not_block_healthy_ones(tmp_path):
     """A batch whose whole network call fails (already exhausted its own
     retries) must not permanently block every OTHER pending segment behind
