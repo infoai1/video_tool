@@ -1,5 +1,21 @@
+# Runtime dependencies — pinned to the versions production actually runs.
+# `pip install -r requirements.txt` reproduces a working server + worker.
 Flask==3.0.3
-anthropic==0.116.0
-requests==2.32.3
-python-docx==1.1.2
+gunicorn==26.0.0        # WSGI server; systemd runs `gunicorn app:app` (port 5060)
+requests==2.34.2        # Soniox upload / poll (transcribe.py)
+python-docx==1.2.0      # transcript .docx export (export.py)
+yt-dlp==2026.7.4        # download audio for Soniox transcription (transcribe.py)
+
+# Transliteration reaches the model through config.PROVIDER. The default
+# (openrouter) and the `claude` CLI both use only the stdlib (urllib /
+# subprocess) — no package required. The optional `anthropic` provider
+# (PROVIDER=anthropic) additionally needs, uncomment if you use it:
+#   anthropic==0.116.0
+#
+# Optional infra for downloading YouTube from a datacenter IP: the bgutil
+# PO-token provider — a yt-dlp plugin (`pip install bgutil-ytdlp-pot-provider`)
+# plus its Docker container. Documented in the deploy runbook, not required to
+# run the app locally.
+
+# --- Dev / test only (not needed in production) ---
 pytest==8.0.0

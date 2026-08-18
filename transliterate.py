@@ -1,9 +1,11 @@
-"""Transliterate Urdu-script segments to Roman Urdu with Claude Haiku.
+"""Transliterate Urdu-script segments to Roman Urdu with a cheap, fast model.
 
-Why Haiku: transliteration is high-volume and low-reasoning, so the cheapest
-capable model is the right one — and one model transliterating the whole corpus
-gives internally consistent spelling, which is exactly what makes the result
-searchable (see normalize.py).
+The model is configurable (see config.PROVIDER / config.MODEL). Production runs
+gemini-2.5-flash-lite via OpenRouter; the anthropic SDK and the `claude` CLI are
+also supported. Transliteration is high-volume and low-reasoning, so the
+cheapest *fast* model is the right one — and using a single model across the
+whole corpus gives internally consistent spelling, which is exactly what makes
+the result searchable (see normalize.py).
 
 Two entry points:
   - run()     — bulk/background fill of the whole backlog (batched, resumable).
@@ -443,15 +445,17 @@ def romanize_all(conn, progress=None, translit_batch=None, model=None, concurren
     progress against the full corpus. Resumable (only NULL roman_text) and
     idempotent. Returns (done, total).
 
-    Rows are fetched oldest-id-first, so a segment whose *entire* batch call
-    fails (not just an id the model happened to omit — see the `skip_ids`
-    logic below) would otherwise be re-fetched at the front of every future
-    round forever, permanently blocking every healthy segment behind it. This
-    corpus really does contain outlier segments (some 19,000+ characters,
-    imported as bulk un-timestamped text) that could plausibly choke a model
-    call. So a wholesale-failed chunk's ids are skipped for the rest of THIS
-    run — they're simply NULL again next time romanize_all is invoked — and
-    the job keeps making progress on everything else.
+    Poison isolation. This corpus contains outlier segments (some 19,000+
+    characters, imported as bulk un-timestamped text) that can choke a model
+    call and fail the whole batch they ride in. When a batch fails wholesale
+    while OTHER batches in the round succeed (proof the endpoint is up), its
+    segments are retried one at a time so healthy batch-mates still get
+    romanized; only a segment that fails even alone is real poison, and it is
+    added to a per-run `skip_ids` set (excluded from the fetch so it can't be
+    re-selected at the front of every round). Skipped ids are simply NULL again
+    next time romanize_all is invoked. If instead the WHOLE round comes back
+    empty (a provider outage, not poison), no single-retry storm is fired — the
+    round is deferred and the consecutive-failure counter handles it.
 
     Separately, a backlog this size runs unattended for a long time, so a
     single bad round (one transient network blip, briefly past
@@ -492,14 +496,37 @@ def romanize_all(conn, progress=None, translit_batch=None, model=None, concurren
         ]
         results = _run_batches_concurrently(chunks, call, concurrency)
         wrote = 0
+        failed_chunks = []
         for chunk, romans in zip(chunks, results):
-            if not romans:  # the whole call for this chunk failed — skip these ids for this run
-                skip_ids.update(seg_id for seg_id, _u, _t in chunk)
+            if not romans:  # the whole call for this chunk came back empty
+                failed_chunks.append(chunk)
                 continue
             for seg_id, _u, _t in chunk:
                 if seg_id in romans:
                     _write_roman(conn, seg_id, romans[seg_id], model)
                     wrote += 1
+
+        # A chunk that failed wholesale is often poisoned by a SINGLE bad segment
+        # (a 19k-char outlier that chokes the model), dragging its healthy
+        # batch-mates down with it. If the round otherwise made progress — proof
+        # the endpoint is up — retry each failed chunk one segment at a time to
+        # salvage the healthy ones; only a segment that fails even *alone* is the
+        # real poison, and only it gets skipped. Guarded on `wrote` so a genuine
+        # provider outage (whole round empty) backs off via the consecutive-
+        # failure counter instead of firing thousands of doomed single calls.
+        if wrote and failed_chunks:
+            for chunk in failed_chunks:
+                for seg in chunk:
+                    seg_id = seg[0]
+                    solo = call([seg]) if len(chunk) > 1 else {}
+                    if solo and seg_id in solo:
+                        _write_roman(conn, seg_id, solo[seg_id], model)
+                        wrote += 1
+                    else:
+                        skip_ids.add(seg_id)  # bad even on its own → real poison
+        else:
+            for chunk in failed_chunks:
+                skip_ids.update(seg_id for seg_id, _u, _t in chunk)
         conn.commit()
         if wrote == 0:
             consecutive_failures += 1

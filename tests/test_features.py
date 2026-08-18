@@ -118,36 +118,46 @@ def test_watchdog_abandoned_calls_do_not_exhaust_capacity(monkeypatch):
     assert dt < 2.0, "call was blocked behind abandoned threads! took %.2fs" % dt
 
 
-def test_romanize_all_poison_chunk_does_not_block_healthy_ones(tmp_path):
-    """A batch whose whole network call fails (already exhausted its own
-    retries) must not permanently block every OTHER pending segment behind
-    it — this corpus has real outlier segments (19k+ char bulk-text imports)
-    that could plausibly choke a model call for a multi-day unattended run."""
-    conn, _ = _seed_video(str(tmp_path / "roman.db"))
-    conn.execute(
-        "INSERT INTO videos (youtube_url, title) VALUES ('https://youtu.be/zzzzzzzzzzz', 'V2')"
-    )
+def test_romanize_all_isolates_poison_segments(tmp_path):
+    """A single segment that always fails the model (a 19k-char bulk-text
+    outlier) must not take its healthy batch-mates down with it: while the
+    endpoint is clearly up (other batches succeed), a wholesale-failed chunk is
+    retried one segment at a time, so every good segment is romanized and only
+    the genuine poison is skipped — even when a good segment is bundled in the
+    same batch as poison."""
+    conn, _ = _seed_video(str(tmp_path / "roman.db"))  # 3 good segments (video 1)
+    # 30 more good segments so a full all-good batch exists in the round, then a
+    # handful of poison ones interleaved at the tail.
+    conn.execute("INSERT INTO videos (youtube_url, title) VALUES ('https://youtu.be/zzzzzzzzzzz', 'V2')")
     vid2 = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-    for i in range(25):
+    for i in range(30):
         conn.execute(
             "INSERT INTO segments (video_id, start_time, urdu_text, urdu_norm) VALUES (?,?,?,?)",
-            (vid2, i, "poison", "poison"),
+            (vid2, i, "good", "good"),
+        )
+    for i in range(5):
+        conn.execute(
+            "INSERT INTO segments (video_id, start_time, urdu_text, urdu_norm) VALUES (?,?,?,?)",
+            (vid2, 100 + i, "poison", "poison"),
         )
     conn.commit()
 
     def call(batch):
+        # any batch containing poison fails wholesale (as it would after the
+        # real _complete_with_retry gives up); an all-healthy batch succeeds.
         if any(u == "poison" for _sid, u, _t in batch):
-            return {}  # simulates a call that already exhausted its own retries
+            return {}
         return {sid: "roman" for sid, _u, _t in batch}
 
-    done, total = transliterate.romanize_all(conn, translit_batch=call, concurrency=2)
+    transliterate.romanize_all(conn, translit_batch=call, concurrency=2)
     good_done = conn.execute(
         "SELECT COUNT(*) FROM segments WHERE urdu_text != 'poison' AND roman_text IS NOT NULL"
     ).fetchone()[0]
     poison_done = conn.execute(
         "SELECT COUNT(*) FROM segments WHERE urdu_text = 'poison' AND roman_text IS NOT NULL"
     ).fetchone()[0]
-    assert good_done == 3 and poison_done == 0, (good_done, poison_done)
+    # all 33 healthy segments romanized; all 5 poison skipped (never romanized)
+    assert good_done == 33 and poison_done == 0, (good_done, poison_done)
     conn.close()
 
 
