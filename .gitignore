@@ -15,3 +15,8 @@ __pycache__/
 .venv/
 venv/
 .pytest_cache/
+
+# Backups + generated ops logs (live on the box, never in git)
+backups/
+docs/BACKUP_LOG.md
+docs/RESTORE_LOG.md
