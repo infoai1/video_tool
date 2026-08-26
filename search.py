@@ -56,7 +56,7 @@ def youtube_timestamp_url(youtube_url, start_time):
 
 
 def _row_to_hit(row):
-    seg_id, vid, title, url, start, roman, urdu = row
+    seg_id, vid, title, url, start, roman, urdu, year = row
     return {
         "segment_id": seg_id,
         "video_id": vid,
@@ -67,6 +67,7 @@ def _row_to_hit(row):
         "timestamp_url": youtube_timestamp_url(url, start),
         "roman_text": roman,
         "urdu_text": urdu,
+        "year": year,
     }
 
 
@@ -104,7 +105,7 @@ def query_highlight_terms(conn, q):
     return roman_terms, urdu_terms
 
 
-_HIT_COLS = "s.id, v.id, v.title, v.youtube_url, s.start_time, s.roman_text, s.urdu_text"
+_HIT_COLS = "s.id, v.id, v.title, v.youtube_url, s.start_time, COALESCE(NULLIF(TRIM(s.roman_clean),''), s.roman_text) AS roman_text, s.urdu_text, v.year"
 
 _ROMAN_SQL = f"""
 SELECT {_HIT_COLS}
@@ -188,7 +189,7 @@ def get_video(conn, video_id):
     if meta is None:
         return None
     rows = conn.execute(
-        "SELECT id, start_time, roman_text, urdu_text FROM segments "
+        "SELECT id, start_time, COALESCE(NULLIF(TRIM(roman_clean),''), roman_text) AS roman_text, urdu_text FROM segments "
         "WHERE video_id = ? ORDER BY start_time",
         (video_id,),
     ).fetchall()
