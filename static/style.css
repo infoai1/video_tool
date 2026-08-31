@@ -109,6 +109,30 @@ h2 { margin-top: 2rem; font-size: 1.15rem; letter-spacing: -0.01em; }
 .sec-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; margin: 0 0 .9rem; }
 .sec-head h2 { margin: 0; font-size: 1.1rem; }
 .see-all { text-decoration: none; font-size: .88rem; font-weight: 600; white-space: nowrap; }
+
+/* clips promo card on the landing page */
+.clips-promo {
+  display: flex; align-items: center; justify-content: space-between; gap: 1.2rem;
+  padding: 1.15rem 1.35rem; border: 1px solid var(--line); border-radius: var(--radius);
+  background: linear-gradient(135deg, var(--accent-soft), transparent 70%), var(--card);
+  box-shadow: var(--shadow); text-decoration: none; color: var(--fg);
+  transition: border-color .15s, transform .15s;
+}
+.clips-promo:hover { border-color: var(--accent); transform: translateY(-1px); }
+.cp-eyebrow {
+  display: inline-block; font-size: .72rem; font-weight: 700; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--accent); margin-bottom: .25rem;
+}
+.cp-title { margin: 0 0 .3rem; font-size: 1.15rem; }
+.cp-sub { margin: 0; color: var(--muted); font-size: .92rem; line-height: 1.5; max-width: 40ch; }
+.cp-cta {
+  flex-shrink: 0; font-weight: 600; font-size: .9rem; color: var(--accent-ink);
+  background: var(--accent); padding: .55rem .95rem; border-radius: 10px; white-space: nowrap;
+}
+@media (max-width: 560px) {
+  .clips-promo { flex-direction: column; align-items: flex-start; gap: .9rem; }
+  .cp-cta { align-self: stretch; text-align: center; }
+}
 .card-grid { list-style: none; padding: 0; margin: 0; display: grid; gap: .7rem; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
 .vcard { margin: 0; }
 .vcard-link {
@@ -178,6 +202,31 @@ h2 { margin-top: 2rem; font-size: 1.15rem; letter-spacing: -0.01em; }
   margin-left: auto; color: var(--muted); font-size: .8rem; font-variant-numeric: tabular-nums;
   background: var(--accent-soft); padding: .1rem .45rem; border-radius: 999px; white-space: nowrap;
 }
+.moments-badge { color: var(--muted); font-size: .78rem; margin-left: .5rem; white-space: nowrap; }
+.meaning-badge { color: #1d7a5f; background: #e7f5ef; font-size: .78rem; margin-left: .5rem; padding: .1rem .45rem; border-radius: 999px; white-space: nowrap; }
+.upload-badge { display: inline-block; color: #2557c7; background: #eef4ff; font-size: .78rem; margin-left: .5rem; padding: .1rem .45rem; border-radius: 999px; white-space: nowrap; border: 1px solid #cdddff; }
+@media (prefers-color-scheme: dark) {
+  .upload-badge { color: #9db9f5; background: rgba(90, 130, 220, .14); border-color: rgba(120, 150, 220, .35); }
+}
+
+/* "Transcribe your own audio" entry card on the landing page */
+.upload-card {
+  display: flex; align-items: center; gap: 1.1rem;
+  padding: 1.15rem 1.35rem; border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--card); box-shadow: var(--shadow); text-decoration: none; color: var(--fg);
+  transition: border-color .15s ease, transform .15s ease;
+}
+.upload-card:hover, .upload-card:focus-visible { border-color: var(--accent); transform: translateY(-1px); }
+.uc-icon {
+  flex: none; display: grid; place-items: center; width: 48px; height: 48px;
+  border-radius: 12px; background: var(--accent-soft); color: var(--accent);
+}
+.uc-body { display: flex; flex-direction: column; gap: .2rem; min-width: 0; }
+.uc-title { font-weight: 650; font-size: 1.05rem; }
+.uc-sub { color: var(--muted); font-size: .9rem; line-height: 1.45; }
+.uc-go { flex: none; margin-left: auto; color: var(--accent); font-size: 1.3rem; }
+.uc-mine { margin: .5rem .2rem 0; font-size: .85rem; }
+@media (max-width: 540px) { .upload-card { padding: 1rem; gap: .85rem; } .uc-go { display: none; } }
 .roman { margin: .25rem 0 .2rem; }
 .urdu { margin: .15rem 0 0; color: var(--muted); font-size: 1.08rem; line-height: 1.9; }
 .hit-actions { display: flex; flex-direction: column; gap: .4rem; flex-shrink: 0; }

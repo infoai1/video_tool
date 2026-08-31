@@ -16,6 +16,7 @@ import re
 
 import normalize
 import transliterate
+import semantic_client
 
 # Pull an 11-char video id out of the common YouTube URL shapes, so a user can
 # paste a link and land on that video's transcript.
@@ -56,7 +57,7 @@ def youtube_timestamp_url(youtube_url, start_time):
 
 
 def _row_to_hit(row):
-    seg_id, vid, title, url, start, roman, urdu, year = row
+    seg_id, vid, title, url, start, roman, urdu, year, source = row
     return {
         "segment_id": seg_id,
         "video_id": vid,
@@ -68,7 +69,56 @@ def _row_to_hit(row):
         "roman_text": roman,
         "urdu_text": urdu,
         "year": year,
+        "source": source,
     }
+
+
+def _add_semantic(conn, sh, hits, by_video):
+    """Fold one semantic hit (youtube_id + timestamp from the retrieval service)
+    into the keyword result list. v1 coverage rule: only surface videos already
+    in roman.db, mapping to the segment nearest the semantic timestamp so the
+    row links to the right moment and carries a real segment_id."""
+    yid = sh.get("youtube_id")
+    if not yid:
+        return
+    vrow = conn.execute(
+        "SELECT id, title, youtube_url, year, content_type FROM videos WHERE youtube_url LIKE ? LIMIT 1",
+        (f"%{yid}%",),
+    ).fetchone()
+    if not vrow:
+        return  # not in the servable corpus yet
+    vid, title, url, year, ctype = vrow
+    if ctype in ("audiobook", "omit"):
+        return  # audiobook readings / omitted videos are excluded from search
+    start = sh.get("start") or 0
+    if vid in by_video:  # keyword already has this video — just count the moment
+        hits[by_video[vid]]["moment_count"] += 1
+        return
+    seg = conn.execute(
+        "SELECT id, start_time, COALESCE(NULLIF(TRIM(roman_clean),''), roman_text), urdu_text "
+        "FROM segments WHERE video_id = ? ORDER BY abs(COALESCE(start_time,0) - ?) LIMIT 1",
+        (vid, start),
+    ).fetchone()
+    if not seg:
+        return
+    seg_id, seg_start, roman, urdu = seg
+    hit = {
+        "segment_id": seg_id,
+        "video_id": vid,
+        "video_title": title,
+        "youtube_url": url,
+        "youtube_id": yid,
+        "start_time": start,
+        "timestamp_url": youtube_timestamp_url(url, start),
+        "roman_text": roman,
+        "urdu_text": urdu,
+        "year": year,
+        "moment_count": 1,
+        "semantic": True,
+        "score": sh.get("score"),
+    }
+    by_video[vid] = len(hits)
+    hits.append(hit)
 
 
 def video_matches(conn, video_id, q):
@@ -105,18 +155,18 @@ def query_highlight_terms(conn, q):
     return roman_terms, urdu_terms
 
 
-_HIT_COLS = "s.id, v.id, v.title, v.youtube_url, s.start_time, COALESCE(NULLIF(TRIM(s.roman_clean),''), s.roman_text) AS roman_text, s.urdu_text, v.year"
+_HIT_COLS = "s.id, v.id, v.title, v.youtube_url, s.start_time, COALESCE(NULLIF(TRIM(s.roman_clean),''), s.roman_text) AS roman_text, s.urdu_text, v.year, v.source"
 
 _ROMAN_SQL = f"""
 SELECT {_HIT_COLS}
 FROM segments_fts f JOIN segments s ON s.id = f.rowid JOIN videos v ON v.id = s.video_id
-WHERE segments_fts MATCH ? ORDER BY bm25(segments_fts) LIMIT ?
+WHERE segments_fts MATCH ? AND (v.content_type IS NULL OR v.content_type NOT IN ('audiobook','omit')) ORDER BY bm25(segments_fts) LIMIT ?
 """
 
 _URDU_SQL = f"""
 SELECT {_HIT_COLS}
 FROM urdu_fts f JOIN segments s ON s.id = f.rowid JOIN videos v ON v.id = s.video_id
-WHERE urdu_fts MATCH ? ORDER BY bm25(urdu_fts) LIMIT ?
+WHERE urdu_fts MATCH ? AND (v.content_type IS NULL OR v.content_type NOT IN ('audiobook','omit')) ORDER BY bm25(urdu_fts) LIMIT ?
 """
 
 
@@ -157,13 +207,22 @@ def search(conn, q, limit=50, translit_query=None):
     configured provider. `conn` must be writable (the query transliteration is
     cached on first use)."""
     hits = []
-    seen = set()
+    seen = set()          # segment ids already taken
+    by_video = {}         # video_id -> index in hits (industry-standard: one row/video)
 
     def add(rows):
         for row in rows:
-            if row[0] not in seen:
-                seen.add(row[0])
-                hits.append(_row_to_hit(row))
+            if row[0] in seen:
+                continue
+            seen.add(row[0])
+            hit = _row_to_hit(row)
+            vid = hit["video_id"]
+            if vid in by_video:
+                hits[by_video[vid]]["moment_count"] += 1
+            else:
+                hit["moment_count"] = 1
+                by_video[vid] = len(hits)
+                hits.append(hit)
 
     roman_tokens = normalize.query_tokens(q)
     if roman_tokens:
@@ -173,6 +232,12 @@ def search(conn, q, limit=50, translit_query=None):
     urdu_toks = normalize.urdu_tokens(urdu)
     if urdu_toks:
         add(conn.execute(_URDU_SQL, (_fts_and(urdu_toks), limit)))
+
+    # Meaning-based hits (Option A): appended AFTER keyword hits so exact matches
+    # stay on top; a video already surfaced by keyword just gets a moment bump.
+    # Any failure in retrieve() returns [] -> keyword-only, search never breaks.
+    for sh in semantic_client.retrieve(q, k=20):
+        _add_semantic(conn, sh, hits, by_video)
 
     return hits[:limit]
 
@@ -184,12 +249,12 @@ def get_video(conn, video_id):
     still appear (roman_text is None) so the page reflects real coverage.
     """
     meta = conn.execute(
-        "SELECT id, title, youtube_url FROM videos WHERE id = ?", (video_id,)
+        "SELECT id, title, youtube_url, source, uploaded_at FROM videos WHERE id = ?", (video_id,)
     ).fetchone()
     if meta is None:
         return None
     rows = conn.execute(
-        "SELECT id, start_time, COALESCE(NULLIF(TRIM(roman_clean),''), roman_text) AS roman_text, urdu_text FROM segments "
+        "SELECT id, start_time, COALESCE(NULLIF(TRIM(roman_clean),''), roman_text) AS roman_text, urdu_text, word_tokens FROM segments "
         "WHERE video_id = ? ORDER BY start_time",
         (video_id,),
     ).fetchall()
@@ -201,10 +266,12 @@ def get_video(conn, video_id):
             "timestamp_url": youtube_timestamp_url(url, start),
             "roman_text": roman,
             "urdu_text": urdu,
+            "word_tokens": toks,  # JSON "[[start_ms,end_ms],...]" or None; karaoke uses it
         }
-        for sid, start, roman, urdu in rows
+        for sid, start, roman, urdu, toks in rows
     ]
-    return {"id": meta[0], "title": meta[1], "youtube_url": url, "segments": segments}
+    return {"id": meta[0], "title": meta[1], "youtube_url": url,
+            "source": meta[3], "uploaded_at": meta[4], "segments": segments}
 
 
 def list_videos(conn, limit=200):

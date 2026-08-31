@@ -20,3 +20,8 @@ venv/
 backups/
 docs/BACKUP_LOG.md
 docs/RESTORE_LOG.md
+
+# secrets and user uploads (never commit)
+video_tool.env
+auth.json
+uploads/

@@ -10,8 +10,8 @@ is atomic (a conditional UPDATE), safe even if more than one worker runs.
 """
 import datetime
 
-COLS = ["id", "kind", "youtube_url", "title", "video_id", "status", "detail",
-        "progress", "created_at", "updated_at"]
+COLS = ["id", "kind", "youtube_url", "title", "audio_path", "video_id", "status",
+        "detail", "progress", "created_at", "updated_at"]
 _SELECT = f"SELECT {', '.join(COLS)} FROM jobs"
 
 
@@ -29,6 +29,17 @@ def enqueue_transcribe(conn, url, title=None):
         "INSERT INTO jobs (kind, youtube_url, title, status, detail, created_at, updated_at) "
         "VALUES ('transcribe', ?, ?, 'queued', 'queued', ?, ?)",
         (url, title, now, now),
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def enqueue_upload(conn, audio_path, title=None):
+    now = _now()
+    cur = conn.execute(
+        "INSERT INTO jobs (kind, audio_path, title, status, detail, created_at, updated_at) "
+        "VALUES ('upload', ?, ?, 'queued', 'queued', ?, ?)",
+        (audio_path, title, now, now),
     )
     conn.commit()
     return cur.lastrowid

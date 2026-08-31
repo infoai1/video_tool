@@ -6,6 +6,8 @@ job at a time, which is what a single Soniox pipeline wants.
 
     python worker.py
 """
+import os
+import subprocess
 import time
 
 import db
@@ -25,6 +27,37 @@ def _run_transcribe(conn, job_id, job):
     else:
         jobs.update(conn, job_id, status="done", progress=100,
                     detail=f"transcribed {n} segments (video {video_id})")
+
+
+def _backup_upload_to_drive(conn, video_id, title):
+    """Best-effort copy of an upload's mp3 to Google Drive (gdrive_user: OAuth
+    remote — the service-account gdrive: has no write quota), named readably.
+    the local file is canonical; Drive is the backup."""
+    row = conn.execute("SELECT audio_path FROM videos WHERE id=?", (video_id,)).fetchone()
+    if not row or not row[0] or not os.path.exists(row[0]):
+        return
+    safe = "".join(c for c in (title or "untitled") if c.isalnum() or c in " -_")[:60].strip() or "untitled"
+    try:
+        subprocess.run(
+            ["rclone", "copyto", row[0],
+             f"gdrive_user:video_tool_uploads/{safe}_v{video_id}.mp3", "--transfers", "2"],
+            capture_output=True, timeout=900,
+        )
+    except Exception:  # noqa: BLE001 — backup must never break the pipeline
+        pass
+
+
+def _run_upload(conn, job_id, job):
+    def on_status(msg):
+        jobs.update(conn, job_id, detail=msg)
+
+    video_id, n = transcribe.ingest_upload(conn, job["audio_path"], job["title"], on_status)
+    # Romanize immediately so the upload is readable (Roman leads) and Roman-searchable.
+    transliterate.romanize_video(conn, video_id, progress=_progress_updater(conn, job_id))
+    on_status("backing up to Google Drive…")
+    _backup_upload_to_drive(conn, video_id, job["title"])
+    jobs.update(conn, job_id, status="done", progress=100,
+                detail=f"transcribed {n} segments (video {video_id})")
 
 
 def _progress_updater(conn, job_id, label="{done}/{total}"):
@@ -60,6 +93,8 @@ def process(job_id):
             _run_romanize(conn, job_id, job)
         elif job["kind"] == "romanize_all":
             _run_romanize_all(conn, job_id, job)
+        elif job["kind"] == "upload":
+            _run_upload(conn, job_id, job)
         else:
             _run_transcribe(conn, job_id, job)
     except transcribe.TranscribeError as exc:

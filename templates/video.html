@@ -1,7 +1,14 @@
 {% extends "base.html" %}
 {% block title %}{{ video.title or 'Video' }} — Roman Urdu Transcripts{% endblock %}
 {% block content %}
+<style>
+  .kw-on { background: var(--mark, #ffe9a8); border-radius: 3px; box-shadow: 0 0 0 2px var(--mark, #ffe9a8); }
+  .kw-done { opacity: .72; }
+</style>
 <h1 class="vhead">{{ video.title or 'Untitled video' }}</h1>
+{% if video.source == 'user_upload' %}
+<p class="upload-badge" title="Uploaded by a user — not part of the official corpus">↑ User upload{% if video.uploaded_at %} · uploaded {{ video.uploaded_at[:10] }}{% endif %}</p>
+{% endif %}
 
 {% if q %}
 <div class="matchbar">
@@ -13,7 +20,9 @@
 {# player + action bar are pinned together so Play/Romanize/Export never scroll
    out of reach while the transcript moves underneath #}
 <div class="stage">
-  {% if youtube_id %}
+  {% if video.source == 'user_upload' %}
+    <audio id="uaudio" controls preload="metadata" style="width:100%" src="{{ url_for('media', video_id=video.id) }}"></audio>
+  {% elif youtube_id %}
     <div class="player-frame"><div class="player-wrap"><div id="player" data-yt="{{ youtube_id }}"></div></div></div>
   {% elif video.youtube_url %}
     <p><a class="ext" href="{{ video.youtube_url }}" target="_blank" rel="noopener">Open on YouTube ↗</a></p>
@@ -51,6 +60,7 @@
         </label>
         <label class="cbx"><input type="checkbox" id="exp-ts" checked> Include timestamps</label>
         <a id="exp-link" class="btn" href="{{ url_for('video_export', video_id=video.id) }}">Download</a>
+        <a class="btn" href="{{ url_for('video_export_csv', video_id=video.id) }}">CSV (urdu + roman)</a>
       </div>
     </details>
   </div>
@@ -63,13 +73,14 @@
 
 <input type="search" id="filter" class="filter" placeholder="Filter this transcript…" oninput="filterLines(this.value)">
 
-{% if video.youtube_url %}
+{% if video.youtube_url or video.source == 'user_upload' %}
 <button id="follow-chip" class="btn follow-chip" type="button" hidden>⤓ Follow along</button>
 {% endif %}
 
-<ol class="transcript{% if video.youtube_url %} seekable{% endif %}" id="transcript">
+<ol class="transcript{% if video.youtube_url or video.source == 'user_upload' %} seekable{% endif %}" id="transcript">
   {% for s in video.segments %}
-  <li class="line{% if s.segment_id in matched_ids %} match{% endif %}">
+  <li class="line{% if s.segment_id in matched_ids %} match{% endif %}"
+      data-start="{{ s.start_time }}"{% if s.word_tokens %} data-tokens="{{ s.word_tokens|e }}"{% endif %}>
     {% if video.youtube_url %}
       <a class="ts seek" data-t="{{ s.start_time|int }}" href="{{ s.timestamp_url }}"
          target="_blank" rel="noopener">{{ s.start_time|hhmmss }}</a>
@@ -157,6 +168,75 @@
         scrollToLine(lines[idx].li);
       }
     }, 500);
+  })();
+
+  // ---- karaoke sync for user uploads (<audio> + word-by-word highlight) ----
+  // Uploads have no YouTube player; an <audio> element drives the transcript.
+  // The line being spoken highlights and stays in view; within it, one word is
+  // lit using Soniox's real per-word timings (data-tokens). Roman leads.
+  // ponytail: roman-word index is mapped from the Urdu-token index by ratio
+  //   (token count ≈ roman word count), so the lit word can drift within a line
+  //   when the two counts differ — exact roman alignment needs a per-word
+  //   romanization pass (deferred, paid). Line-level highlight is always exact.
+  (function () {
+    var audio = document.getElementById('uaudio');
+    if (!audio) return;
+    var lines = [].slice.call(document.querySelectorAll('.transcript .line')).map(function (li) {
+      var toks = li.getAttribute('data-tokens');
+      try { toks = toks ? JSON.parse(toks) : null; } catch (e) { toks = null; }
+      return { start: parseFloat(li.getAttribute('data-start')) || 0, li: li,
+               roman: li.querySelector('.roman'), toks: toks, words: null };
+    });
+    if (!lines.length) return;
+
+    lines.forEach(function (l) {
+      l.li.addEventListener('click', function (e) {
+        if (e.target.closest('a') || e.target.closest('button')) return;
+        if (window.getSelection && String(window.getSelection())) return;
+        audio.currentTime = l.start; audio.play(); resumeFollow();
+      });
+    });
+
+    function wordsOf(l) {  // wrap the roman line's words once (roman is present at load for uploads)
+      if (l.words) return l.words;
+      var el = l.roman; if (!el || !el.textContent.trim()) return null;
+      var esc = function (w) { return w.replace(/[&<>]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); };
+      el.innerHTML = el.textContent.trim().split(/\s+/).map(function (w) { return '<span class="kw">' + esc(w) + '</span>'; }).join(' ');
+      l.words = [].slice.call(el.querySelectorAll('.kw'));
+      return l.words;
+    }
+    function segEnd(i) { return i + 1 < lines.length ? lines[i + 1].start : (audio.duration || lines[i].start + 30); }
+
+    var follow = true, autoScrollAt = 0;
+    var chip = document.getElementById('follow-chip');
+    function resumeFollow() { follow = true; if (chip) chip.hidden = true; }
+    window.addEventListener('scroll', function () {
+      if (Date.now() - autoScrollAt < 1200) return;
+      if (follow) { follow = false; if (chip) chip.hidden = false; }
+    }, { passive: true });
+    if (chip) chip.addEventListener('click', resumeFollow);
+
+    audio.addEventListener('timeupdate', function () {
+      var t = audio.currentTime, idx = -1;
+      for (var i = 0; i < lines.length; i++) { if (lines[i].start <= t + 0.05) idx = i; else break; }
+      lines.forEach(function (l, i) { l.li.classList.toggle('playing', i === idx); });
+      if (idx < 0) return;
+      var l = lines[idx], ws = wordsOf(l);
+      if (ws && ws.length) {
+        var frac;
+        if (l.toks && l.toks.length) {  // real per-word timing → token index
+          var tms = t * 1000, tk = 0;
+          for (var j = 0; j < l.toks.length; j++) { if (l.toks[j][0] <= tms) tk = j; else break; }
+          frac = tk / l.toks.length;
+        } else {                        // fallback: even split across the line's span
+          var s0 = l.start, s1 = segEnd(idx);
+          frac = s1 > s0 ? (t - s0) / (s1 - s0) : 0;
+        }
+        var wi = Math.min(ws.length - 1, Math.max(0, Math.floor(frac * ws.length)));
+        ws.forEach(function (w, k) { w.classList.toggle('kw-on', k === wi); w.classList.toggle('kw-done', k < wi); });
+      }
+      if (follow) { autoScrollAt = Date.now(); scrollToLine(l.li); }
+    });
   })();
 
   // ---- one romanization engine, shared by the script toggle and Export -----

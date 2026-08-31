@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}My uploads — karaoke transcripts{% endblock %}
+{% block content %}
+<style>
+  .up-wrap { max-width: 760px; margin: 2rem auto; }
+  .up-list { list-style: none; padding: 0; }
+  .up-item { padding: .9rem 0; border-bottom: 1px solid var(--border,#3333); display: flex; flex-wrap: wrap; gap: .5rem 1rem; align-items: baseline; }
+  .up-item .t { font-weight: 600; }
+  .up-item .meta { color: var(--muted,#888); font-size: .85rem; }
+  .up-item .dl a { font-size: .85rem; margin-right: .8rem; }
+  .up-job { padding: .7rem 1rem; border-radius: 10px; background: var(--card,#8881); margin: .6rem 0; }
+</style>
+<div class="up-wrap">
+  <h1>My uploads</h1>
+  <p class="muted">Every audio file uploaded here, newest first — marked
+    <span class="upload-badge">↑ user upload</span> everywhere so it is never mistaken for the
+    official corpus. <a href="{{ url_for('upload_page') }}">Upload another →</a></p>
+
+  {% for j in active_jobs %}
+  <div class="up-job">
+    <strong>{{ j.title or 'Untitled upload' }}</strong> — {{ j.detail or j.status }}
+    {% if j.progress %}({{ j.progress|round|int }}%){% endif %}
+    <span class="muted">· refresh this page for progress</span>
+  </div>
+  {% endfor %}
+
+  {% if uploads %}
+  <ul class="up-list">
+    {% for u in uploads %}
+    <li class="up-item">
+      <a class="t" href="{{ url_for('video', video_id=u.id) }}">{{ u.title or 'Untitled upload' }}</a>
+      <span class="meta">uploaded {{ (u.uploaded_at or '')[:10] }} · {{ u.segments }} lines · Roman {{ u.roman_done }}/{{ u.segments }}</span>
+      <span class="dl">
+        <a href="{{ url_for('video', video_id=u.id) }}">Karaoke ▶</a>
+        <a href="{{ url_for('video_export', video_id=u.id) }}?script=both&timestamps=1">DOCX ⬇</a>
+        <a href="{{ url_for('video_export_csv', video_id=u.id) }}">CSV ⬇</a>
+      </span>
+    </li>
+    {% endfor %}
+  </ul>
+  {% elif not active_jobs %}
+  <p class="muted">No uploads yet. <a href="{{ url_for('upload_page') }}">Upload your first audio file →</a></p>
+  {% endif %}
+</div>
+{% endblock %}

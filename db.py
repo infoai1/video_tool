@@ -30,8 +30,10 @@ CREATE TABLE IF NOT EXISTS videos (
     source_video_id INTEGER UNIQUE,   -- id in the source annotation.db (NULL if transcribed here)
     youtube_url     TEXT,
     title           TEXT,
-    source          TEXT DEFAULT 'annotation',  -- 'annotation' | 'soniox'
-    added_at        TEXT
+    source          TEXT DEFAULT 'annotation',  -- 'annotation' | 'soniox' | 'user_upload'
+    added_at        TEXT,
+    uploaded_at     TEXT,                         -- set for source='user_upload' (drives the badge)
+    audio_path      TEXT                          -- local audio file for user uploads (served for karaoke)
 );
 
 CREATE TABLE IF NOT EXISTS segments (
@@ -45,6 +47,7 @@ CREATE TABLE IF NOT EXISTS segments (
     model       TEXT,                 -- which model produced roman_text
     roman_at    TEXT,                 -- when roman_text was produced (for the dashboard)
     created_at  TEXT,
+    word_tokens TEXT,                 -- JSON [[start_ms,end_ms],...] per Soniox word, for karaoke (uploads only)
     UNIQUE (video_id, start_time)     -- makes ingest idempotent / resumable
 );
 
@@ -52,9 +55,10 @@ CREATE TABLE IF NOT EXISTS segments (
 -- web app enqueues; a separate worker processes. Powers the dashboard.
 CREATE TABLE IF NOT EXISTS jobs (
     id          INTEGER PRIMARY KEY,
-    kind        TEXT NOT NULL,        -- 'transcribe' | 'romanize'
+    kind        TEXT NOT NULL,        -- 'transcribe' | 'romanize' | 'upload'
     youtube_url TEXT,
     title       TEXT,
+    audio_path  TEXT,                 -- for 'upload' jobs: the saved audio file to transcribe
     video_id    INTEGER,              -- for 'romanize' jobs
     status      TEXT NOT NULL,        -- queued | running | done | error
     detail      TEXT,                 -- progress note or error message
@@ -101,6 +105,15 @@ CREATE TABLE IF NOT EXISTS bookmark_tags (
     PRIMARY KEY (bookmark_id, tag)
 );
 CREATE INDEX IF NOT EXISTS idx_bmtag_tag ON bookmark_tags(tag);
+
+-- what visitors searched, one row per search (for a usage report)
+CREATE TABLE IF NOT EXISTS search_log (
+    id      INTEGER PRIMARY KEY,
+    q       TEXT NOT NULL,
+    results INTEGER,
+    at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_search_log_at ON search_log(at);
 """
 
 
@@ -126,9 +139,13 @@ def connect_ro(path=None):
 _MIGRATIONS = [
     ("videos", "source", "TEXT DEFAULT 'annotation'"),
     ("videos", "added_at", "TEXT"),
+    ("videos", "uploaded_at", "TEXT"),
+    ("videos", "audio_path", "TEXT"),
     ("segments", "roman_at", "TEXT"),
+    ("segments", "word_tokens", "TEXT"),
     ("jobs", "video_id", "INTEGER"),
     ("jobs", "progress", "REAL DEFAULT 0"),
+    ("jobs", "audio_path", "TEXT"),
 ]
 
 

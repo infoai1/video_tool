@@ -17,6 +17,14 @@ SOURCE_DB = os.environ.get(
 # derived data — deleting it and re-running loses nothing that can't be rebuilt.
 DB_PATH = os.environ.get("VIDEO_TOOL_DB", "roman.db")
 
+# User-uploaded audio (source='user_upload') is saved here and served for the
+# karaoke player. Unlike the store, these are NOT derived — keep them.
+UPLOAD_DIR = os.environ.get("VIDEO_TOOL_UPLOAD_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads"))
+MAX_UPLOAD_MB = int(os.environ.get("VIDEO_TOOL_MAX_UPLOAD_MB", "200"))
+MAX_BATCH_FILES = int(os.environ.get("VIDEO_TOOL_MAX_BATCH_FILES", "10"))
+# Any format is accepted — the worker converts everything to mp3 with ffmpeg
+# and rejects only files that aren't decodable audio.
+
 # How the transliteration model is reached:
 #   "claude_cli" -> the authenticated `claude` CLI (Claude Code) — uses a Claude
 #                   subscription, so transliteration is covered by the plan

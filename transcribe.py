@@ -176,6 +176,100 @@ def segment_transcript(transcript, seconds=None):
     return [(st, tx) for st, tx in segs if tx]
 
 
+def segment_transcript_tokens(transcript, seconds=None):
+    """Like segment_transcript, but each segment also carries its per-word
+    timings: (start_seconds, text, [[start_ms, end_ms], ...]). Used for uploads
+    so the karaoke player can highlight word-by-word. Tokens without timing are
+    kept in the text but contribute no timing pair."""
+    seconds = seconds or config.SEGMENT_SECONDS
+    tokens = transcript.get("tokens")
+    if not tokens:
+        text = (transcript.get("text") or "").strip()
+        return [(0.0, text, [])] if text else []
+
+    segs, cur, times, start = [], [], [], None
+    for t in tokens:
+        s = t.get("start_ms")
+        e = t.get("end_ms", s)
+        cur.append(t.get("text", ""))
+        if s is None:
+            continue
+        if e is not None:
+            times.append([int(s), int(e)])
+        if start is None:
+            start = s
+        if e is not None and (e - start) / 1000.0 >= seconds:
+            segs.append((start / 1000.0, "".join(cur).strip(), times))
+            cur, times, start = [], [], None
+    if cur and start is not None:
+        segs.append((start / 1000.0, "".join(cur).strip(), times))
+    return [(st, tx, tm) for st, tx, tm in segs if tx]
+
+
+def normalize_upload_audio(audio_path, on_status=None):
+    """Convert any uploaded audio/video file to mp3 with ffmpeg, so (a) Soniox
+    always gets a format it auto-detects and (b) the browser <audio> player can
+    play it back for karaoke. Replaces the original file; returns the mp3 path.
+    Raises TranscribeError if ffmpeg cannot decode it (not real audio)."""
+    base, ext = os.path.splitext(audio_path)
+    if ext.lower() == ".mp3":
+        return audio_path  # already universal
+    if on_status:
+        on_status("converting audio…")
+    dest = base + ".mp3"
+    proc = subprocess.run(
+        ["ffmpeg", "-y", "-i", audio_path, "-vn", "-acodec", "libmp3lame", "-q:a", "4", dest],
+        capture_output=True, text=True, timeout=1800,
+    )
+    if proc.returncode != 0 or not os.path.exists(dest) or os.path.getsize(dest) == 0:
+        try:
+            os.remove(dest)
+        except OSError:
+            pass
+        last = (proc.stderr or "").strip().splitlines()
+        raise TranscribeError("could not read this file as audio" + (f" ({last[-1][:120]})" if last else ""))
+    os.remove(audio_path)
+    return dest
+
+
+def ingest_upload(conn, audio_path, title, on_status=None):
+    """Transcribe a user-uploaded audio file with Soniox and insert it as a new
+    video (source='user_upload'). Same Soniox + segment path as YouTube ingest,
+    but the audio comes from disk and per-word timings are stored for karaoke.
+    Returns (video_id, segment_count). Raises TranscribeError."""
+    db.init_db()
+    if not audio_path or not os.path.exists(audio_path):
+        raise TranscribeError("uploaded audio file not found")
+
+    audio_path = normalize_upload_audio(audio_path, on_status)
+    transcript = soniox_transcribe(audio_path, on_status)
+    segs = segment_transcript_tokens(transcript)
+    if not segs:
+        raise TranscribeError("Soniox returned no transcript for this audio")
+
+    if on_status:
+        on_status(f"saving {len(segs)} segments…")
+    now = _now()
+    conn.execute(
+        "INSERT INTO videos (title, source, added_at, uploaded_at, audio_path) "
+        "VALUES (?, 'user_upload', ?, ?, ?)",
+        (title or "Untitled upload", now, now, audio_path),
+    )
+    video_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    for start, text, times in segs:
+        norm = normalize.normalize_urdu(text)
+        conn.execute(
+            "INSERT OR IGNORE INTO segments "
+            "(video_id, start_time, urdu_text, urdu_norm, word_tokens, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (video_id, start, text, norm, json.dumps(times), now),
+        )
+        seg_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        conn.execute("INSERT INTO urdu_fts (rowid, urdu_norm) VALUES (?, ?)", (seg_id, norm))
+    conn.commit()
+    return video_id, len(segs)
+
+
 def existing_video(conn, youtube_id):
     row = conn.execute(
         "SELECT id FROM videos WHERE youtube_url LIKE ? LIMIT 1", (f"%{youtube_id}%",)

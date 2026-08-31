@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}Upload audio — karaoke transcript{% endblock %}
+{% block content %}
+<style>
+  .up-wrap { max-width: 640px; margin: 2rem auto; }
+  .up-drop { display:flex; flex-direction:column; gap:.9rem; }
+  .up-drop input[type=file], .up-drop input[type=text] { padding:.7rem; border-radius:10px; border:1px solid var(--line,#ccc); background:var(--card,#fff); color:inherit; font-size:1rem; }
+  .up-drop button { padding:.8rem; font-size:1.05rem; }
+  .up-note { color: var(--muted,#888); font-size:.9rem; margin:.3rem 0 1.2rem; }
+  #up-status { margin-top:1rem; }
+  .up-files { list-style:none; padding:0; margin:1rem 0 0; }
+  .up-files li { display:flex; gap:.7rem; align-items:baseline; padding:.55rem 0; border-bottom:1px solid var(--line,#3333); font-size:.92rem; }
+  .up-files .fn { font-weight:600; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .up-files .fs { color:var(--muted,#888); margin-left:auto; white-space:nowrap; flex:none; }
+  .up-files .fs.ok { color:var(--accent,#0c6b57); }
+  .up-files .fs.err { color:#c0392b; }
+</style>
+<div class="up-wrap">
+  <h1>Upload audio → karaoke transcript</h1>
+  <p class="up-note">Upload Urdu audio recordings — <strong>any audio format</strong> (mp3, m4a,
+    wav, ogg, amr, voice notes…; video files work too, the audio is extracted). Each file is
+    transcribed with Soniox, romanized, and gets a word-by-word karaoke player — Urdu script and
+    Roman Urdu, synced to the audio. Downloads as DOCX / CSV with timestamps. Marked
+    <span class="upload-badge">↑ user upload</span> so it is never mistaken for the official corpus.</p>
+  <p class="up-note">Limits: up to <strong>{{ max_files }} files</strong> per batch ·
+    <strong>{{ max_mb }} MB</strong> and <strong>5 hours</strong> each.
+    · <a href="{{ url_for('uploads_page') }}">My uploads →</a></p>
+
+  <div class="up-drop">
+    <input type="file" id="up-file" accept="audio/*,video/*" multiple>
+    <input type="text" id="up-title" placeholder="Title (optional — used only for a single file)">
+    <button id="up-btn" class="btn" type="button">Upload &amp; transcribe</button>
+  </div>
+
+  <p id="up-status" class="muted" hidden></p>
+  <ul id="up-files" class="up-files" hidden></ul>
+</div>
+
+<script>
+  (function () {
+    var MAX_FILES = {{ max_files }};
+    var btn = document.getElementById('up-btn'), file = document.getElementById('up-file'),
+        title = document.getElementById('up-title'), st = document.getElementById('up-status'),
+        list = document.getElementById('up-files');
+    function show(msg, warn) { st.hidden = false; st.className = warn ? 'muted sync-warn' : 'muted'; st.textContent = msg; }
+
+    // One row per file: name + live status. Each file is its own job on the
+    // server; the worker processes them one at a time, in order.
+    function row(name) {
+      var li = document.createElement('li');
+      var fn = document.createElement('span'); fn.className = 'fn'; fn.textContent = name;
+      var fs = document.createElement('span'); fs.className = 'fs'; fs.textContent = 'uploading…';
+      li.appendChild(fn); li.appendChild(fs);
+      list.appendChild(li);
+      return fs;
+    }
+    function pollJob(jid, fs) {
+      fetch('/api/job/' + jid).then(function (r) { return r.json(); }).then(function (j) {
+        if (j.status === 'error') { fs.className = 'fs err'; fs.textContent = j.detail || 'failed'; return done(); }
+        if (j.status === 'done') {
+          var m = (j.detail || '').match(/video (\d+)/);
+          fs.className = 'fs ok';
+          fs.innerHTML = m ? 'done ✓ <a href="/video/' + m[1] + '">open karaoke →</a>' : 'done ✓';
+          return done();
+        }
+        fs.textContent = (j.detail || j.status) + (j.progress ? ' ' + Math.round(j.progress) + '%' : '');
+        setTimeout(function () { pollJob(jid, fs); }, 3000);
+      }).catch(function () { setTimeout(function () { pollJob(jid, fs); }, 5000); });
+    }
+    var pending = 0;
+    function done() {
+      pending -= 1;
+      if (pending <= 0) {
+        show('All done — see “My uploads” for the full list.', false);
+        btn.disabled = false;
+      }
+    }
+
+    async function uploadOne(f, singleTitle) {
+      var fs = row(f.name);
+      var fd = new FormData(); fd.append('audio', f); fd.append('title', singleTitle || '');
+      try {
+        var r = await fetch('/api/upload_audio', { method: 'POST', body: fd });
+        var j;
+        try { j = await r.json(); } catch (e) { j = { ok: false, error: 'server rejected (' + r.status + ')' }; }
+        if (!j.ok) { fs.className = 'fs err'; fs.textContent = j.error || 'upload failed'; return done(); }
+        fs.textContent = 'queued…';
+        pollJob(j.job_id, fs);
+      } catch (e) { fs.className = 'fs err'; fs.textContent = 'upload failed — try again'; done(); }
+    }
+
+    btn.addEventListener('click', async function () {
+      var files = [].slice.call(file.files || []);
+      if (!files.length) { show('Choose one or more audio files first.', true); return; }
+      if (files.length > MAX_FILES) { show('Maximum ' + MAX_FILES + ' files per batch — remove ' + (files.length - MAX_FILES) + '.', true); return; }
+      btn.disabled = true; list.hidden = false; list.innerHTML = '';
+      pending = files.length;
+      show('Uploading ' + files.length + ' file' + (files.length > 1 ? 's' : '') + '… transcription runs one at a time in the background.');
+      var singleTitle = files.length === 1 ? (title.value || '') : '';
+      // Upload sequentially so a slow connection isn't saturated by parallel POSTs.
+      for (var i = 0; i < files.length; i++) { await uploadOne(files[i], singleTitle); }
+    });
+  })();
+</script>
+{% endblock %}

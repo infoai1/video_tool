@@ -7,6 +7,7 @@ import datetime
 import hmac
 import json
 import os
+import uuid
 
 import config
 import db
@@ -17,10 +18,17 @@ import search
 import transcribe
 import transliterate
 from flask import (Flask, abort, jsonify, redirect, render_template, request,
-                   session, url_for)
+                   send_file, session, url_for)
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 app.secret_key = config.SECRET_KEY
+app.config["MAX_CONTENT_LENGTH"] = config.MAX_UPLOAD_MB * 1024 * 1024
+
+# Migrate the store in place on startup so newly-added columns (uploaded_at,
+# audio_path, word_tokens) exist before any query touches them. Idempotent.
+if db.exists():
+    db.init_db()
 
 # Auth is on only when a credential is configured (auth.json / env), so local
 # dev and tests aren't gated.
@@ -116,6 +124,8 @@ def index():
     youtube_not_found = False
     active_job = None
     roman_terms, urdu_terms = [], []
+    year_counts, undated_count, year_sel, sort = [], 0, "", ""
+    year_counts_d = {}
     saved_segments = set()
     landing = None
     if q:
@@ -131,10 +141,36 @@ def index():
                 active = jobs.active_for_url(conn, q)
                 active_job = active[0] if active else None
             else:
-                hits = search.search(conn, q, limit=60)
+                all_hits = search.search(conn, q, limit=300)  # ponytail: fetch wide for accurate year facets; bump if a query exceeds 300 matches
+                for h in all_hits:
+                    y = h.get("year")
+                    if y:
+                        year_counts_d[y] = year_counts_d.get(y, 0) + 1
+                    else:
+                        undated_count += 1
+                year_sel = (request.args.get("year") or "").strip()
+                sort = (request.args.get("sort") or "").strip()
+                hits = all_hits
+                if year_sel == "undated":
+                    hits = [h for h in hits if not h.get("year")]
+                elif year_sel.isdigit():
+                    hits = [h for h in hits if h.get("year") == int(year_sel)]
+                if sort == "new":
+                    hits = sorted(hits, key=lambda h: (h.get("year") or 0), reverse=True)
+                elif sort == "old":
+                    hits = sorted(hits, key=lambda h: (h.get("year") or 9999))
+                year_counts = sorted(year_counts_d.items(), key=lambda kv: kv[0], reverse=True)
+                total_found = len(all_hits)
+                hits = hits[:60]
                 roman_terms, urdu_terms = search.query_highlight_terms(conn, q)
                 saved_segments = library.saved_segment_set(
                     conn, [h["segment_id"] for h in hits])
+                try:  # best-effort search logging (never break search)
+                    conn.execute("INSERT INTO search_log (q, results, at) VALUES (?, ?, ?)",
+                                 (q, total_found, datetime.datetime.utcnow().isoformat()))
+                    conn.commit()
+                except Exception:
+                    pass
         finally:
             conn.close()
     else:
@@ -144,6 +180,7 @@ def index():
         youtube_not_found=youtube_not_found, active_job=active_job,
         roman_terms=roman_terms, urdu_terms=urdu_terms,
         saved_segments=saved_segments, landing=landing,
+        year_counts=year_counts, undated_count=undated_count, year_sel=year_sel, sort=sort,
     )
 
 
@@ -301,6 +338,119 @@ def api_transcribe():
     finally:
         conn.close()
     return jsonify({"ok": True, "job_id": job_id, "status": "queued"})
+
+
+@app.route("/upload")
+def upload_page():
+    """Dedicated page: upload audio → Soniox transcript → romanize → karaoke."""
+    return render_template("upload.html", max_mb=config.MAX_UPLOAD_MB, max_files=config.MAX_BATCH_FILES)
+
+
+@app.route("/uploads")
+def uploads_page():
+    """Dedicated list of user-uploaded audio: every upload newest-first, plus
+    any upload job still in flight — the one place to find them all."""
+    if not db.exists():
+        return render_template("uploads.html", uploads=[], active_jobs=[])
+    conn = db.connect_ro()
+    try:
+        rows = conn.execute(
+            """
+            SELECT v.id, v.title, v.uploaded_at,
+                   COUNT(s.id) AS segments,
+                   COUNT(COALESCE(NULLIF(TRIM(s.roman_clean),''), s.roman_text)) AS roman_done
+            FROM videos v LEFT JOIN segments s ON s.video_id = v.id
+            WHERE v.source = 'user_upload'
+            GROUP BY v.id
+            ORDER BY v.uploaded_at DESC
+            """
+        ).fetchall()
+        active = conn.execute(
+            "SELECT id, title, status, detail, progress FROM jobs "
+            "WHERE kind='upload' AND status IN ('queued','running') ORDER BY id DESC"
+        ).fetchall()
+    finally:
+        conn.close()
+    uploads = [
+        {"id": r[0], "title": r[1], "uploaded_at": r[2], "segments": r[3], "roman_done": r[4]}
+        for r in rows
+    ]
+    active_jobs = [
+        {"id": r[0], "title": r[1], "status": r[2], "detail": r[3], "progress": r[4]}
+        for r in active
+    ]
+    return render_template("uploads.html", uploads=uploads, active_jobs=active_jobs)
+
+
+@app.route("/video/<int:video_id>/export.csv")
+def video_export_csv(video_id):
+    """Download a video's transcript as CSV: timestamp, urdu, roman."""
+    if not db.exists():
+        abort(404)
+    conn = db.connect_ro()
+    try:
+        data = search.get_video(conn, video_id)
+    finally:
+        conn.close()
+    if data is None:
+        abort(404)
+    blob = export.transcript_csv(data)
+    safe = "".join(c for c in (data["title"] or "transcript") if c.isalnum() or c in " -_")[:60].strip()
+    return app.response_class(
+        blob, mimetype="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{safe or "transcript"}.csv"'},
+    )
+
+
+@app.route("/api/upload_audio", methods=["POST"])
+def api_upload_audio():
+    """Accept a user audio file, save it, and enqueue a Soniox transcription job.
+    A worker transcribes + romanizes it (source='user_upload'), after which it is
+    searchable and readable like any other video, with a karaoke player. Progress
+    polls via /api/job/<id>, same as a YouTube transcribe."""
+    if not db.exists():
+        return jsonify({"ok": False, "error": "store not built yet"}), 503
+    f = request.files.get("audio")
+    if not f or not f.filename:
+        return jsonify({"ok": False, "error": "no audio file"}), 400
+    # Any format is accepted: the worker converts everything to mp3 with ffmpeg
+    # and rejects files that aren't decodable audio. Keep only a sane extension.
+    ext = f.filename.rsplit(".", 1)[-1].lower() if "." in f.filename else "bin"
+    ext = "".join(c for c in ext if c.isalnum())[:8] or "bin"
+
+    os.makedirs(config.UPLOAD_DIR, exist_ok=True)
+    dest = os.path.join(config.UPLOAD_DIR, f"{uuid.uuid4().hex}.{ext}")
+    f.save(dest)
+    if os.path.getsize(dest) == 0:
+        os.remove(dest)
+        return jsonify({"ok": False, "error": "empty file"}), 400
+
+    title = (request.form.get("title") or "").strip()
+    if not title:
+        # Nicely-titled fallback from the filename: "meri_recording-2.m4a" -> "Meri Recording 2"
+        stem = os.path.splitext(secure_filename(f.filename))[0]
+        title = " ".join(w.capitalize() for w in stem.replace("_", " ").replace("-", " ").split()) or "Untitled Upload"
+    conn = db.connect()
+    try:
+        job_id = jobs.enqueue_upload(conn, dest, title)
+    finally:
+        conn.close()
+    return jsonify({"ok": True, "job_id": job_id, "status": "queued"})
+
+
+@app.route("/media/<int:video_id>")
+def media(video_id):
+    """Serve a user-uploaded video's audio file for the karaoke player."""
+    conn = db.connect_ro()
+    try:
+        row = conn.execute(
+            "SELECT audio_path FROM videos WHERE id=? AND source='user_upload'", (video_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+    if not row or not row[0] or not os.path.exists(row[0]):
+        abort(404)
+    return send_file(row[0], conditional=True)  # conditional → range requests, so <audio> can seek
 
 
 @app.route("/api/upload_cookies", methods=["POST"])
@@ -525,18 +675,19 @@ def library_page():
     if not db.exists():
         return render_template("library.html", no_store=True)
     tab = request.args.get("tab", "saved")
-    if tab not in ("saved", "romanized", "history"):
+    if tab not in ("saved", "romanized", "history", "searches"):
         tab = "saved"
     q = (request.args.get("q") or "").strip()
     tag = (request.args.get("tag") or "").strip()
     date_from = (request.args.get("from") or "").strip()
     date_to = (request.args.get("to") or "").strip()
+    zero = request.args.get("zero") == "1"
     conn = db.connect()
     try:
         ctx = {
             "tab": tab, "q": q, "tag": tag, "date_from": date_from, "date_to": date_to,
             "tags": library.all_tags(conn), "counts": library.counts(conn),
-            "saved": [], "romanized": [], "history": [],
+            "saved": [], "romanized": [], "history": [], "searches": {},
         }
         if tab == "saved":
             ctx["saved"] = library.list_saved(conn, tag=tag or None, q=q or None,
@@ -544,6 +695,10 @@ def library_page():
         elif tab == "romanized":
             ctx["romanized"] = library.list_romanized(conn, q=q or None,
                                                       date_from=date_from or None, date_to=date_to or None)
+        elif tab == "searches":
+            ctx["searches"] = library.searches(conn, q=q or None,
+                                            date_from=date_from or None, date_to=date_to or None,
+                                            zero_only=zero)
         else:
             ctx["history"] = library.history(conn, q=q or None,
                                             date_from=date_from or None, date_to=date_to or None)

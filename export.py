@@ -25,7 +25,10 @@ def transcript_docx(video, script="both", timestamps=True):
 
     doc = Document()
     doc.add_heading(video["title"] or "Transcript", level=1)
-    if video.get("youtube_url"):
+    if video.get("source") == "user_upload":
+        when = (video.get("uploaded_at") or "")[:10]
+        doc.add_paragraph(f"User upload{' · uploaded ' + when if when else ''} · transcript in Urdu & Roman Urdu")
+    elif video.get("youtube_url"):
         doc.add_paragraph(video["youtube_url"])
 
     for seg in video["segments"]:
@@ -49,3 +52,16 @@ def transcript_docx(video, script="both", timestamps=True):
     buf = io.BytesIO()
     doc.save(buf)
     return buf.getvalue()
+
+
+def transcript_csv(video):
+    """The transcript as CSV bytes: timestamp, urdu, roman — one row per segment.
+    UTF-8 with BOM so Excel renders the Urdu script correctly."""
+    import csv
+
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["timestamp", "urdu", "roman"])
+    for seg in video["segments"]:
+        w.writerow([_hhmmss(seg["start_time"]), seg.get("urdu_text") or "", seg.get("roman_text") or ""])
+    return buf.getvalue().encode("utf-8-sig")
