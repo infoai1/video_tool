@@ -20,3 +20,37 @@ venv/
 backups/
 docs/BACKUP_LOG.md
 docs/RESTORE_LOG.md
+
+# secrets and user uploads (never commit)
+video_tool.env
+auth.json
+uploads/
+
+# ---- SAFETY (added 2026-09-02): code is open source, these NEVER are ----
+# Credential / secret files and any backup copy of them
+auth.json*
+*.env
+*secret*
+youtube_cookies.txt*
+
+# Databases — transcript + corpus data stays on the server only
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Logs (may contain titles, paths, user data)
+*.log
+
+# Editor / migration scratch backups (some contain credentials)
+*.bak
+*.bak-*
+*.bak_*
+
+# User-uploaded audio
+uploads/
+
+# Exported transcript data (server-only)
+lecture_*.json
+*.jsonl
