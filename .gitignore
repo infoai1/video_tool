@@ -50,3 +50,7 @@ youtube_cookies.txt*
 
 # User-uploaded audio
 uploads/
+
+# Exported transcript data (server-only)
+lecture_*.json
+*.jsonl
