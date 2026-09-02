@@ -89,6 +89,10 @@ YT_PROXY = os.environ.get("VIDEO_TOOL_YT_PROXY", "")
 YT_POT_BASE_URL = os.environ.get("VIDEO_TOOL_YT_POT_URL", "")
 # Rough target length of a transcript segment, in seconds.
 SEGMENT_SECONDS = float(os.environ.get("VIDEO_TOOL_SEGMENT_SECONDS", "18"))
+# Minimum BGE-M3 similarity for a semantic ("meaning match") hit to be shown.
+# Real matches score ~0.67-0.82; an unembeddable query (e.g. an acronym) returns
+# a near-constant ~0.60 to everything — noise. 0.62 cuts the noise, keeps real.
+SEMANTIC_MIN_SCORE = float(os.environ.get("VIDEO_TOOL_SEMANTIC_MIN", "0.62"))
 # How many of a channel's newest uploads to scan when syncing (newest first).
 # Generous by default so a long catch-up isn't truncated; already-transcribed
 # ones are skipped, so a high cap is cheap.
@@ -109,3 +113,13 @@ if os.path.exists(_AUTH_FILE):
 AUTH_USER = os.environ.get("VIDEO_TOOL_AUTH_USER", _auth.get("user", ""))
 AUTH_PASSWORD = os.environ.get("VIDEO_TOOL_AUTH_PASSWORD", _auth.get("password", ""))
 SECRET_KEY = os.environ.get("VIDEO_TOOL_SECRET", _auth.get("secret", "")) or "dev-insecure-key"
+
+# Additional logins (multi-user). auth.json may carry a "users": [{"user","password"}]
+# list; the legacy single AUTH_USER/AUTH_PASSWORD stays valid. Env vars can only
+# express the single legacy credential. Order-preserving, de-duplicated by user.
+AUTH_USERS = []
+_seen_users = set()
+for _cu, _cp in ([(AUTH_USER, AUTH_PASSWORD)] +
+                 [(_e.get("user", ""), _e.get("password", "")) for _e in _auth.get("users", [])]):
+    if _cu and _cp and _cu not in _seen_users:
+        AUTH_USERS.append((_cu, _cp)); _seen_users.add(_cu)

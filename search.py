@@ -14,6 +14,7 @@ Roman hits are listed first (higher precision); Urdu hits fill in the rest.
 """
 import re
 
+import config
 import normalize
 import transliterate
 import semantic_client
@@ -94,9 +95,13 @@ def _add_semantic(conn, sh, hits, by_video):
     if vid in by_video:  # keyword already has this video — just count the moment
         hits[by_video[vid]]["moment_count"] += 1
         return
+    # Pick the nearest segment with REAL content — skip the stray 1-2 char
+    # resegmentation fragments (e.g. a lone "پ"), which would otherwise show as
+    # a meaningless "p" preview when a semantic timestamp lands next to one.
     seg = conn.execute(
         "SELECT id, start_time, COALESCE(NULLIF(TRIM(roman_clean),''), roman_text), urdu_text "
-        "FROM segments WHERE video_id = ? ORDER BY abs(COALESCE(start_time,0) - ?) LIMIT 1",
+        "FROM segments WHERE video_id = ? AND LENGTH(TRIM(urdu_text)) > 8 "
+        "ORDER BY abs(COALESCE(start_time,0) - ?) LIMIT 1",
         (vid, start),
     ).fetchone()
     if not seg:
@@ -236,7 +241,13 @@ def search(conn, q, limit=50, translit_query=None):
     # Meaning-based hits (Option A): appended AFTER keyword hits so exact matches
     # stay on top; a video already surfaced by keyword just gets a moment bump.
     # Any failure in retrieve() returns [] -> keyword-only, search never breaks.
+    # Drop weak semantic noise: BGE-M3 can't embed an unknown token (e.g. the
+    # acronym "BJP"), so it returns a near-constant low score to everything —
+    # which surfaced as irrelevant "meaning match" cards. A floor keeps real
+    # matches (0.67-0.82) and cuts that noise (~0.60).
     for sh in semantic_client.retrieve(q, k=20):
+        if (sh.get("score") or 0) < config.SEMANTIC_MIN_SCORE:
+            continue
         _add_semantic(conn, sh, hits, by_video)
 
     return hits[:limit]

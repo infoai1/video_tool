@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}Usage — Roman Urdu Transcripts{% endblock %}
+{% block content %}
+<style>
+  .us-wrap { max-width: 820px; margin: 1rem auto 3rem; }
+  .us-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: .8rem; margin: 1.2rem 0 2rem; }
+  .us-card { padding: 1rem 1.1rem; border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); box-shadow: var(--shadow); }
+  .us-card .n { font-size: 1.7rem; font-weight: 750; letter-spacing: -.02em; }
+  .us-card .l { color: var(--muted); font-size: .82rem; margin-top: .15rem; }
+  .us-sec { margin: 2rem 0; }
+  .us-sec h2 { font-size: 1.1rem; margin: 0 0 .8rem; }
+  /* pure-CSS bar chart: flex row of columns, height set by inline style */
+  .chart { display: flex; align-items: flex-end; gap: 4px; height: 140px; padding: .5rem 0; border-bottom: 1px solid var(--line); }
+  .chart .col { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 100%; }
+  .chart .bar { width: 100%; min-height: 2px; background: var(--accent); border-radius: 3px 3px 0 0; transition: height .2s; }
+  .chart .bar.zero { background: var(--line); }
+  .chart-x { display: flex; gap: 4px; margin-top: .3rem; }
+  .chart-x span { flex: 1; text-align: center; color: var(--faint); font-size: .68rem; }
+  table.us { width: 100%; border-collapse: collapse; font-size: .92rem; }
+  table.us td, table.us th { text-align: left; padding: .45rem .3rem; border-bottom: 1px solid var(--line); }
+  table.us th { color: var(--muted); font-weight: 600; font-size: .8rem; }
+  table.us td.num { text-align: right; color: var(--muted); white-space: nowrap; }
+  .us-two { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; }
+  @media (max-width: 640px) { .us-two { grid-template-columns: 1fr; gap: 1.4rem; } }
+  .us-note { color: var(--faint); font-size: .8rem; margin-top: .5rem; }
+</style>
+<div class="us-wrap">
+  <h1>Usage</h1>
+
+  {% if not stats %}
+  <p class="muted">No data store yet.</p>
+  {% else %}
+  <div class="us-cards">
+    <div class="us-card"><div class="n">{{ stats.searches.today }}</div><div class="l">searches today</div></div>
+    <div class="us-card"><div class="n">{{ stats.searches.d7 }}</div><div class="l">last 7 days</div></div>
+    <div class="us-card"><div class="n">{{ stats.searches.d30 }}</div><div class="l">last 30 days</div></div>
+    <div class="us-card"><div class="n">{{ stats.searches.total }}</div><div class="l">searches total</div></div>
+    <div class="us-card"><div class="n">{{ stats.uploads }}</div><div class="l">user uploads</div></div>
+    <div class="us-card"><div class="n">{{ stats.videos }}</div><div class="l">lectures in corpus</div></div>
+  </div>
+
+  <div class="us-sec">
+    <h2>Searches per day <span class="muted" style="font-weight:400;font-size:.85rem">· last {{ stats.days }} days</span></h2>
+    <div class="chart">
+      {% for p in stats.series %}
+      <div class="col" title="{{ p.day }}: {{ p.n }} searches">
+        <span class="bar {{ 'zero' if p.n == 0 }}" style="height: {{ ((p.n / stats.peak * 100) if stats.peak else 0)|round(1) }}%"></span>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="chart-x">
+      {% for p in stats.series %}<span>{{ p.day[8:10] if loop.index0 % 2 == 0 else '' }}</span>{% endfor %}
+    </div>
+    <p class="us-note">Bars show daily search count (peak = {{ stats.peak }}). Only searches are logged — this is search activity, not unique visitors.</p>
+  </div>
+
+  <div class="us-two">
+    <div class="us-sec">
+      <h2>Top searches</h2>
+      {% if stats.top %}
+      <table class="us">
+        <tr><th>query</th><th class="num">times</th></tr>
+        {% for r in stats.top %}
+        <tr><td><a href="{{ url_for('index', q=r.q) }}">{{ r.q }}</a></td><td class="num">{{ r.count }}</td></tr>
+        {% endfor %}
+      </table>
+      {% else %}<p class="muted">No searches yet.</p>{% endif %}
+    </div>
+
+    <div class="us-sec">
+      <h2>No results <span class="muted" style="font-weight:400;font-size:.85rem">· content gaps</span></h2>
+      {% if stats.zero %}
+      <table class="us">
+        <tr><th>query</th><th class="num">times</th></tr>
+        {% for r in stats.zero %}
+        <tr><td><a href="{{ url_for('index', q=r.q) }}">{{ r.q }}</a></td><td class="num">{{ r.count }}</td></tr>
+        {% endfor %}
+      </table>
+      <p class="us-note">What people searched but found nothing — demand you don't yet cover.</p>
+      {% else %}<p class="muted">Every search found something.</p>{% endif %}
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

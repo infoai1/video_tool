@@ -11,9 +11,10 @@
     <a class="brand" href="{{ url_for('index') }}">Roman Urdu Transcripts</a>
     <nav>
       <a href="{{ url_for('index') }}">Search</a>
-      <a href="{{ url_for('library_page') }}">Library</a>
+      <a href="{{ url_for('usage_page') }}">Usage</a>
       <a href="{{ url_for('videos') }}">Videos</a>
       <a href="/clips">Clips</a>
+      <a href="/clips/qa">Q&amp;A</a>
       <a href="{{ url_for('upload_page') }}">Upload</a>
       {% if session.get('user') %}<a class="nav-out" href="{{ url_for('logout') }}">Sign out</a>{% endif %}
     </nav>

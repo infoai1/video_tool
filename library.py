@@ -334,3 +334,83 @@ def counts(conn):
     saved = conn.execute("SELECT COUNT(*) FROM bookmarks").fetchone()[0]
     tags = conn.execute("SELECT COUNT(DISTINCT tag) FROM bookmark_tags").fetchone()[0]
     return {"saved": saved, "tags": tags}
+
+
+def searches(conn, q=None, date_from=None, date_to=None, zero_only=False, limit=200):
+    """What people searched: each distinct query with how many times and when
+    last, plus a total. Most-used first. Missing/empty table -> empty report."""
+    where, args = [], []
+    if q:
+        where.append("q LIKE ?"); args.append(f"%{q}%")
+    if date_from:
+        where.append("at >= ?"); args.append(date_from)
+    if date_to:
+        where.append("at <= ?"); args.append(date_to + "T23:59:59")
+    if zero_only:
+        where.append("results = 0")
+    wsql = ("WHERE " + " AND ".join(where)) if where else ""
+    try:
+        rows = conn.execute(
+            f"SELECT q, COUNT(*) n, MAX(at) last, MAX(results) res FROM search_log "
+            f"{wsql} GROUP BY LOWER(TRIM(q)) ORDER BY n DESC, last DESC LIMIT ?",
+            (*args, limit)).fetchall()
+        total = conn.execute(f"SELECT COUNT(*) FROM search_log {wsql}", args).fetchone()[0]
+    except Exception:
+        return {"rows": [], "total": 0}
+    return {"total": total, "zero_only": zero_only,
+            "rows": [{"q": r[0], "count": r[1], "last": r[2], "results": r[3]} for r in rows]}
+
+
+def usage_stats(conn, days=14):
+    """Simple platform-usage summary for the owner: is it being used?
+
+    Everything here comes from data already logged (search_log) or stored
+    (videos/jobs) — no per-visitor tracking exists, so this measures SEARCH and
+    UPLOAD activity, not unique visitors. Returns counts, a per-day search
+    series (last `days`), top queries, and top zero-result queries.
+    """
+    def _count(where=""):
+        try:
+            return conn.execute(f"SELECT COUNT(*) FROM search_log {where}").fetchone()[0]
+        except Exception:
+            return 0
+
+    total = _count()
+    today = _count("WHERE substr(at,1,10) = date('now')")
+    d7 = _count("WHERE substr(at,1,10) >= date('now','-6 days')")
+    d30 = _count("WHERE substr(at,1,10) >= date('now','-29 days')")
+
+    # per-day series, oldest→newest, zero-filled so the chart has no gaps
+    try:
+        raw = dict(conn.execute(
+            "SELECT substr(at,1,10) d, COUNT(*) FROM search_log "
+            "WHERE substr(at,1,10) >= date('now', ?) GROUP BY d",
+            (f"-{days-1} days",),
+        ).fetchall())
+    except Exception:
+        raw = {}
+    import datetime as _dt
+    today_d = _dt.date.today()
+    series = []
+    for i in range(days - 1, -1, -1):
+        day = (today_d - _dt.timedelta(days=i)).isoformat()
+        series.append({"day": day, "n": raw.get(day, 0)})
+    peak = max((p["n"] for p in series), default=0)
+
+    top = searches(conn, limit=15)["rows"]
+    zero = searches(conn, zero_only=True, limit=15)["rows"]
+
+    uploads = conn.execute(
+        "SELECT COUNT(*) FROM videos WHERE source='user_upload'"
+    ).fetchone()[0]
+    videos = conn.execute("SELECT COUNT(*) FROM videos").fetchone()[0]
+    romanized = conn.execute(
+        "SELECT COUNT(DISTINCT video_id) FROM segments WHERE roman_text IS NOT NULL"
+    ).fetchone()[0]
+
+    return {
+        "searches": {"total": total, "today": today, "d7": d7, "d30": d30},
+        "series": series, "peak": peak, "days": days,
+        "top": top, "zero": zero,
+        "uploads": uploads, "videos": videos, "romanized": romanized,
+    }

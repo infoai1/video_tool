@@ -62,7 +62,7 @@ def login():
         p = request.form.get("password", "")
         # Compare as bytes: hmac.compare_digest rejects non-ASCII str (the
         # password may contain characters like ¥ ×).
-        if _eq(u, config.AUTH_USER) and _eq(p, config.AUTH_PASSWORD):
+        if any(_eq(u, _cu) and _eq(p, _cp) for _cu, _cp in config.AUTH_USERS):
             session["user"] = u
             dest = request.args.get("next") or url_for("index")
             return redirect(dest if dest.startswith("/") else url_for("index"))
@@ -670,41 +670,25 @@ def api_feedback():
 
 @app.route("/library")
 def library_page():
-    """The creator's library: Saved (with tag playlists), Romanized, and History.
-    One page, three tabs; each is searchable and date-filterable."""
+    """Retired: the creator library (Saved/Romanized/History/Searches) was a
+    grab-bag that duplicated /videos and /dashboard; its one useful part (search
+    usage) now lives on /usage. Kept as a redirect so old links don't break;
+    saving (★) still works, it just has no dedicated list page."""
+    return redirect(url_for("usage_page"))
+
+
+@app.route("/usage")
+def usage_page():
+    """Owner usage dashboard: is the platform being used? Search + upload
+    activity from data already logged (no per-visitor tracking exists)."""
     if not db.exists():
-        return render_template("library.html", no_store=True)
-    tab = request.args.get("tab", "saved")
-    if tab not in ("saved", "romanized", "history", "searches"):
-        tab = "saved"
-    q = (request.args.get("q") or "").strip()
-    tag = (request.args.get("tag") or "").strip()
-    date_from = (request.args.get("from") or "").strip()
-    date_to = (request.args.get("to") or "").strip()
-    zero = request.args.get("zero") == "1"
-    conn = db.connect()
+        return render_template("usage.html", no_store=True, stats=None)
+    conn = db.connect_ro()
     try:
-        ctx = {
-            "tab": tab, "q": q, "tag": tag, "date_from": date_from, "date_to": date_to,
-            "tags": library.all_tags(conn), "counts": library.counts(conn),
-            "saved": [], "romanized": [], "history": [], "searches": {},
-        }
-        if tab == "saved":
-            ctx["saved"] = library.list_saved(conn, tag=tag or None, q=q or None,
-                                              date_from=date_from or None, date_to=date_to or None)
-        elif tab == "romanized":
-            ctx["romanized"] = library.list_romanized(conn, q=q or None,
-                                                      date_from=date_from or None, date_to=date_to or None)
-        elif tab == "searches":
-            ctx["searches"] = library.searches(conn, q=q or None,
-                                            date_from=date_from or None, date_to=date_to or None,
-                                            zero_only=zero)
-        else:
-            ctx["history"] = library.history(conn, q=q or None,
-                                            date_from=date_from or None, date_to=date_to or None)
+        stats = library.usage_stats(conn)
     finally:
         conn.close()
-    return render_template("library.html", no_store=False, **ctx)
+    return render_template("usage.html", no_store=False, stats=stats)
 
 
 @app.route("/api/save/video", methods=["POST"])
