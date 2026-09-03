@@ -121,9 +121,23 @@ _SUGGESTED_TOPICS = [
 ]
 
 
+_LANDING_CACHE = {"at": 0.0, "ctx": None}
+_LANDING_TTL = 600  # seconds. The counts below scan 640k rows; doing it per visit cost ~0.5 s.
+
+
 def _landing_context():
     """Data for the welcome/landing page so it feels alive instead of empty:
-    library size, the creator's playlists, and recently romanized videos."""
+    library size, the creator's playlists, and recently romanized videos.
+    Cached for 10 minutes: the numbers change a few times a day, not per visit."""
+    now = datetime.datetime.now().timestamp()
+    if _LANDING_CACHE["ctx"] is not None and now - _LANDING_CACHE["at"] < _LANDING_TTL:
+        return _LANDING_CACHE["ctx"]
+    ctx = _landing_context_uncached()
+    _LANDING_CACHE.update(at=now, ctx=ctx)
+    return ctx
+
+
+def _landing_context_uncached():
     conn = db.connect_ro()
     try:
         videos = conn.execute("SELECT COUNT(*) FROM videos").fetchone()[0]
