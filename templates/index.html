@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% block main_class %}{{ "landing" if landing }}{% endblock %}
 {% block content %}
 {% if landing %}
 <section class="hero">
@@ -8,7 +9,7 @@
     (<em>namaz</em>, <em>namaaz</em> and <em>namāz</em> all match). Or paste a
     YouTube link to open that video’s transcript.</p>
 
-  <form class="search hero-search" method="get" action="{{ url_for('index') }}">
+  <form class="search hero-search" id="q" method="get" action="{{ url_for('index') }}">
     <input type="search" name="q" value="" placeholder="Search Roman Urdu — or paste a YouTube link" autofocus>
     <button type="submit">Search</button>
   </form>
@@ -31,8 +32,37 @@
   </div>
 </section>
 
+<section class="land-sec sec-tiles">
+  <div class="sec-grid">
+    <a class="sg-tile" href="/feed?open=1">
+      <svg class="sg-ic" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="3" width="12" height="18" rx="2"/><path d="M10 9.5v5l4-2.5z" fill="currentColor" stroke="none"/></svg>
+      <div class="sg-title">Shorts</div>
+      <div class="sg-sub">Clips and questions, one per screen. Swipe.</div>
+    </a>
+    <a class="sg-tile" href="/clips/qa">
+      <svg class="sg-ic" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H8l-4 4V5a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2z"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3 2.4V13"/></svg>
+      <div class="sg-title">Questions</div>
+      <div class="sg-sub">2,900+ asked of Maulana, with his answers.</div>
+    </a>
+    <a class="sg-tile" href="/clips">
+      <svg class="sg-ic" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h13"/><circle cx="19" cy="12" r="2"/></svg>
+      <div class="sg-title">Clips</div>
+      <div class="sg-sub">Every lecture pre-cut into shareable moments.</div>
+    </a>
+    <a class="sg-tile" href="{{ url_for('upload_page') }}">
+      <svg class="sg-ic" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V4"/><path d="m7 9 5-5 5 5"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>
+      <div class="sg-title">Transcribe</div>
+      <div class="sg-sub">Upload a recording, get a karaoke transcript.</div>
+    </a>
+  </div>
+</section>
+
 {% if landing.playlists %}
-<section class="land-sec">
+<section class="land-sec sec-playlists">
   <div class="sec-head">
     <h2>Your playlists</h2>
     <a class="see-all" href="{{ url_for('library_page', tab='saved') }}">Open library →</a>
@@ -45,30 +75,34 @@
 </section>
 {% endif %}
 
-{% if landing.recent %}
-<section class="land-sec">
-  <div class="sec-head">
-    <h2>Recently romanized</h2>
-    <a class="see-all" href="{{ url_for('library_page', tab='romanized') }}">See all →</a>
-  </div>
-  <ul class="card-grid">
-    {% for v in landing.recent %}
-    <li class="vcard">
-      <a class="vcard-link" href="{{ url_for('video', video_id=v.id) }}">
-        <span class="vcard-title">{{ v.title or 'Untitled video' }}</span>
-        <span class="vcard-meta">{{ v.done }}/{{ v.total }} lines · {{ (v.last or '')[:10] }}</span>
-      </a>
-    </li>
-    {% endfor %}
-  </ul>
-</section>
-{% endif %}
-
 {% else %}{# a query is present, or the store is missing — show compact search + results #}
 <form class="search" method="get" action="{{ url_for('index') }}">
-  <input type="search" name="q" value="{{ q|e }}" placeholder="Search Roman Urdu — or paste a YouTube link"{% if not q %} autofocus{% endif %}>
+  <input type="search" name="q" value="{{ q|e }}" autocomplete="off" placeholder="Search Roman Urdu — or paste a YouTube link"{% if not q %} autofocus{% endif %}>
   <button type="submit">Search</button>
 </form>
+
+{% if year_counts or undated_count %}
+<form class="filterbar" method="get" action="{{ url_for('index') }}"
+      style="display:flex;gap:16px;align-items:center;margin:14px 0 4px;font-size:14px;color:var(--muted,#9a9a92)">
+  <input type="hidden" name="q" value="{{ q|e }}">
+  <label style="display:flex;gap:6px;align-items:center">Year
+    <select name="year" onchange="this.form.submit()" style="padding:6px 10px;border-radius:8px">
+      <option value="">All years</option>
+      {% for y, c in year_counts %}
+      <option value="{{ y }}"{{ ' selected' if year_sel == y|string }}>{{ y }} ({{ c }})</option>
+      {% endfor %}
+      {% if undated_count %}<option value="undated"{{ ' selected' if year_sel == 'undated' }}>Undated ({{ undated_count }})</option>{% endif %}
+    </select>
+  </label>
+  <label style="display:flex;gap:6px;align-items:center">Sort
+    <select name="sort" onchange="this.form.submit()" style="padding:6px 10px;border-radius:8px">
+      <option value="">Relevance</option>
+      <option value="new"{{ ' selected' if sort == 'new' }}>Newest first</option>
+      <option value="old"{{ ' selected' if sort == 'old' }}>Oldest first</option>
+    </select>
+  </label>
+</form>
+{% endif %}
 
 {% if youtube_not_found %}
   <div class="notice">
@@ -137,7 +171,7 @@ python cli.py transliterate</pre>
     <p class="count">{{ hits|length }} result{{ '' if hits|length == 1 else 's' }} for “{{ q|e }}”</p>
     <ul class="hits">
       {% for h in hits %}
-      <li class="hit" data-video="{{ h.video_id }}"
+      <li class="hit" data-video="{{ h.video_id }}"{% if h.semantic %} data-semantic="1"{% endif %}
           {% if h.youtube_id %}data-yt="{{ h.youtube_id }}" data-t="{{ h.start_time|int }}"{% endif %}
           data-title="{{ (h.video_title or 'Video')|e }}">
         <div class="hit-row">
@@ -145,6 +179,9 @@ python cli.py transliterate</pre>
             <div class="hit-head">
               <span class="vtitle">{{ h.video_title or 'Untitled video' }}</span>
               <span class="ts-badge">{{ h.start_time|hhmmss }}</span>
+              {% if h.moment_count and h.moment_count > 1 %}<span class="moments-badge">{{ h.moment_count }} moments</span>{% endif %}
+              {% if h.semantic %}<span class="meaning-badge" title="found by meaning, not exact words">≈ meaning match</span>{% endif %}
+              {% if h.source == 'user_upload' %}<span class="upload-badge" title="Uploaded by a user — not part of the official corpus">↑ user upload</span>{% endif %}
             </div>
             <p class="roman" data-seg="{{ h.segment_id }}">{{ h.roman_text or '' }}</p>
             {% if h.urdu_text %}<p class="urdu" dir="rtl">{{ h.urdu_text }}</p>{% endif %}
@@ -197,8 +234,10 @@ python cli.py transliterate</pre>
     if (re.test(txt)) el.innerHTML = txt.replace(re, '<mark>$1</mark>');
   }
   function highlightAll() {
-    document.querySelectorAll('.hits .roman').forEach(function (el) { highlight(el, ROMAN_TERMS); });
-    document.querySelectorAll('.hits .urdu').forEach(function (el) { highlight(el, URDU_TERMS); });
+    // Keyword rows only — meaning-matched rows rarely contain the typed words,
+    // so highlighting there just marks filler ("in","will").
+    document.querySelectorAll('.hits li.hit:not([data-semantic]) .roman').forEach(function (el) { highlight(el, ROMAN_TERMS); });
+    document.querySelectorAll('.hits li.hit:not([data-semantic]) .urdu').forEach(function (el) { highlight(el, URDU_TERMS); });
   }
 
   // Fill Roman Urdu for the (few) results, then highlight.
@@ -504,6 +543,15 @@ python cli.py transliterate</pre>
       btn.disabled = false;
     });
   });
+</script>
+
+<script>
+// Keep the search box in sync with the actually-rendered results, even when
+// the browser restores a stale typed value on back/forward (bfcache).
+window.addEventListener("pageshow", function () {
+  var b = document.querySelector('form.search input[name="q"]');
+  if (b) b.value = {{ q|tojson }};
+});
 </script>
 {% endif %}
 {% endblock %}
