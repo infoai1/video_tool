@@ -7,6 +7,9 @@ import datetime
 import hmac
 import json
 import os
+import uuid
+
+import sqlite3
 
 import config
 import db
@@ -17,10 +20,35 @@ import search
 import transcribe
 import transliterate
 from flask import (Flask, abort, jsonify, redirect, render_template, request,
-                   session, url_for)
+                   send_file, session, url_for)
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 app.secret_key = config.SECRET_KEY
+app.config["MAX_CONTENT_LENGTH"] = config.MAX_UPLOAD_MB * 1024 * 1024
+# 2026-09-02 audit: cookie hardening. Secure flag is switched on by the env file
+# (VIDEO_TOOL_COOKIE_SECURE=1) so the plain-http test client keeps working.
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=os.environ.get("VIDEO_TOOL_COOKIE_SECURE", "0") == "1",
+    PERMANENT_SESSION_LIFETIME=datetime.timedelta(days=30),
+)
+
+# Login throttle: 5 wrong passwords from one address => 10-minute lockout.
+# nginx proxies from 127.0.0.1, so the real address is the first X-Forwarded-For hop.
+_LOGIN_FAILS = {}
+_LOGIN_MAX, _LOGIN_WINDOW = 5, 600
+
+
+def _client_ip():
+    fwd = request.headers.get("X-Forwarded-For", "")
+    return (fwd.split(",")[0].strip() if fwd else "") or request.remote_addr or "?"
+
+# Migrate the store in place on startup so newly-added columns (uploaded_at,
+# audio_path, word_tokens) exist before any query touches them. Idempotent.
+if db.exists():
+    db.init_db()
 
 # Auth is on only when a credential is configured (auth.json / env), so local
 # dev and tests aren't gated.
@@ -50,14 +78,25 @@ def login():
         return redirect(url_for("index"))
     error = None
     if request.method == "POST":
+        ip, now = _client_ip(), datetime.datetime.now().timestamp()
+        fails, since = _LOGIN_FAILS.get(ip, (0, now))
+        if now - since > _LOGIN_WINDOW:
+            fails, since = 0, now
+        if fails >= _LOGIN_MAX:
+            return render_template("login.html",
+                                   error="Too many attempts. Try again in 10 minutes."), 429
         u = request.form.get("username", "")
         p = request.form.get("password", "")
         # Compare as bytes: hmac.compare_digest rejects non-ASCII str (the
         # password may contain characters like ¥ ×).
-        if _eq(u, config.AUTH_USER) and _eq(p, config.AUTH_PASSWORD):
+        if any(_eq(u, _cu) and _eq(p, _cp) for _cu, _cp in config.AUTH_USERS):
             session["user"] = u
-            dest = request.args.get("next") or url_for("index")
-            return redirect(dest if dest.startswith("/") else url_for("index"))
+            session.permanent = True
+            _LOGIN_FAILS.pop(ip, None)
+            # Owner decision 2026-09-02: every login lands on the main page,
+            # never back on whatever page happened to trigger the login.
+            return redirect(url_for("index"))
+        _LOGIN_FAILS[ip] = (fails + 1, since)
         error = "Wrong username or password."
     return render_template("login.html", error=error)
 
@@ -85,9 +124,23 @@ _SUGGESTED_TOPICS = [
 ]
 
 
+_LANDING_CACHE = {"at": 0.0, "ctx": None}
+_LANDING_TTL = 600  # seconds. The counts below scan 640k rows; doing it per visit cost ~0.5 s.
+
+
 def _landing_context():
     """Data for the welcome/landing page so it feels alive instead of empty:
-    library size, the creator's playlists, and recently romanized videos."""
+    library size, the creator's playlists, and recently romanized videos.
+    Cached for 10 minutes: the numbers change a few times a day, not per visit."""
+    now = datetime.datetime.now().timestamp()
+    if _LANDING_CACHE["ctx"] is not None and now - _LANDING_CACHE["at"] < _LANDING_TTL:
+        return _LANDING_CACHE["ctx"]
+    ctx = _landing_context_uncached()
+    _LANDING_CACHE.update(at=now, ctx=ctx)
+    return ctx
+
+
+def _landing_context_uncached():
     conn = db.connect_ro()
     try:
         videos = conn.execute("SELECT COUNT(*) FROM videos").fetchone()[0]
@@ -116,6 +169,8 @@ def index():
     youtube_not_found = False
     active_job = None
     roman_terms, urdu_terms = [], []
+    year_counts, undated_count, year_sel, sort = [], 0, "", ""
+    year_counts_d = {}
     saved_segments = set()
     landing = None
     if q:
@@ -131,10 +186,36 @@ def index():
                 active = jobs.active_for_url(conn, q)
                 active_job = active[0] if active else None
             else:
-                hits = search.search(conn, q, limit=60)
+                all_hits = search.search(conn, q, limit=300)  # ponytail: fetch wide for accurate year facets; bump if a query exceeds 300 matches
+                for h in all_hits:
+                    y = h.get("year")
+                    if y:
+                        year_counts_d[y] = year_counts_d.get(y, 0) + 1
+                    else:
+                        undated_count += 1
+                year_sel = (request.args.get("year") or "").strip()
+                sort = (request.args.get("sort") or "").strip()
+                hits = all_hits
+                if year_sel == "undated":
+                    hits = [h for h in hits if not h.get("year")]
+                elif year_sel.isdigit():
+                    hits = [h for h in hits if h.get("year") == int(year_sel)]
+                if sort == "new":
+                    hits = sorted(hits, key=lambda h: (h.get("year") or 0), reverse=True)
+                elif sort == "old":
+                    hits = sorted(hits, key=lambda h: (h.get("year") or 9999))
+                year_counts = sorted(year_counts_d.items(), key=lambda kv: kv[0], reverse=True)
+                total_found = len(all_hits)
+                hits = hits[:60]
                 roman_terms, urdu_terms = search.query_highlight_terms(conn, q)
                 saved_segments = library.saved_segment_set(
                     conn, [h["segment_id"] for h in hits])
+                try:  # best-effort search logging (never break search)
+                    conn.execute("INSERT INTO search_log (q, results, at) VALUES (?, ?, ?)",
+                                 (q, total_found, datetime.datetime.utcnow().isoformat()))
+                    conn.commit()
+                except Exception:
+                    pass
         finally:
             conn.close()
     else:
@@ -144,6 +225,7 @@ def index():
         youtube_not_found=youtube_not_found, active_job=active_job,
         roman_terms=roman_terms, urdu_terms=urdu_terms,
         saved_segments=saved_segments, landing=landing,
+        year_counts=year_counts, undated_count=undated_count, year_sel=year_sel, sort=sort,
     )
 
 
@@ -159,6 +241,48 @@ def videos():
     return render_template("videos.html", videos=vids, no_store=False)
 
 
+
+
+# Clips and Q&A are cut from these lectures by the separate clips app; read them
+# read-only so a lecture page can show what came out of it. NOTE the id bridge:
+# this app's video ids are roman.db ids, while clips/qa key on the annotation.db
+# id held in videos.source_video_id -- they differ for 2,138 of 2,178 videos, so
+# never assume they are the same number.
+CLIP_STUDY_CLIPS = "/root/clip_study/clips.db"
+CLIP_STUDY_QA = "/root/clip_study/qa.db"
+
+
+def _lecture_extras(conn, video_id):
+    """(clips, qa) cut from this lecture. Best effort -- never break the page."""
+    row = conn.execute(
+        "SELECT source_video_id FROM videos WHERE id = ?", (video_id,)).fetchone()
+    ann = row[0] if row and row[0] else None
+    clips, qa = [], []
+    if not ann:
+        return clips, qa
+    try:
+        d = sqlite3.connect(f"file:{CLIP_STUDY_CLIPS}?mode=ro", uri=True)
+        clips = [{"start": int(r[0] or 0), "hhmm": _hhmmss(r[0] or 0),
+                  "seconds": int(r[1] or 0), "scale": (r[2] or "").title(),
+                  "topic": r[3] or ""}
+                 for r in d.execute(
+                     "SELECT start_time, seconds, scale, topic FROM clips "
+                     "WHERE video_id = ? ORDER BY start_time", (ann,))]
+        d.close()
+    except Exception:
+        clips = []
+    try:
+        d = sqlite3.connect(f"file:{CLIP_STUDY_QA}?mode=ro", uri=True)
+        qa = [{"start": int(r[0] or 0), "hhmm": _hhmmss(r[0] or 0), "q": r[1] or ""}
+              for r in d.execute(
+                  "SELECT q_start, question_title FROM qa_units WHERE source_video_id = ? "
+                  "AND has_answer = 1 AND refined = 1 AND question_title != '' "
+                  "ORDER BY q_start", (ann,))]
+        d.close()
+    except Exception:
+        qa = []
+    return clips, qa
+
 @app.route("/video/<int:video_id>")
 def video(video_id):
     if not db.exists():
@@ -168,6 +292,7 @@ def video(video_id):
     q = (request.args.get("q") or "").strip()
     conn = db.connect()  # writable: caches query transliteration + reads saved-state
     matched_ids, roman_terms, urdu_terms = [], [], []
+    lecture_clips, lecture_qa = [], []
     saved = {"video": False, "segments": []}
     try:
         data = search.get_video(conn, video_id)
@@ -176,12 +301,14 @@ def video(video_id):
             if q:
                 matched_ids = search.video_matches(conn, video_id, q)
                 roman_terms, urdu_terms = search.query_highlight_terms(conn, q)
+            lecture_clips, lecture_qa = _lecture_extras(conn, video_id)
     finally:
         conn.close()
     if data is None:
         abort(404)
     return render_template(
         "video.html", video=data, youtube_id=search.youtube_id(data["youtube_url"]),
+        lecture_clips=lecture_clips, lecture_qa=lecture_qa,
         q=q, matched_ids=matched_ids, roman_terms=roman_terms, urdu_terms=urdu_terms,
         saved_video=saved["video"], saved_segments=set(saved["segments"]),
     )
@@ -301,6 +428,119 @@ def api_transcribe():
     finally:
         conn.close()
     return jsonify({"ok": True, "job_id": job_id, "status": "queued"})
+
+
+@app.route("/upload")
+def upload_page():
+    """Dedicated page: upload audio → Soniox transcript → romanize → karaoke."""
+    return render_template("upload.html", max_mb=config.MAX_UPLOAD_MB, max_files=config.MAX_BATCH_FILES)
+
+
+@app.route("/uploads")
+def uploads_page():
+    """Dedicated list of user-uploaded audio: every upload newest-first, plus
+    any upload job still in flight — the one place to find them all."""
+    if not db.exists():
+        return render_template("uploads.html", uploads=[], active_jobs=[])
+    conn = db.connect_ro()
+    try:
+        rows = conn.execute(
+            """
+            SELECT v.id, v.title, v.uploaded_at,
+                   COUNT(s.id) AS segments,
+                   COUNT(COALESCE(NULLIF(TRIM(s.roman_clean),''), s.roman_text)) AS roman_done
+            FROM videos v LEFT JOIN segments s ON s.video_id = v.id
+            WHERE v.source = 'user_upload'
+            GROUP BY v.id
+            ORDER BY v.uploaded_at DESC
+            """
+        ).fetchall()
+        active = conn.execute(
+            "SELECT id, title, status, detail, progress FROM jobs "
+            "WHERE kind='upload' AND status IN ('queued','running') ORDER BY id DESC"
+        ).fetchall()
+    finally:
+        conn.close()
+    uploads = [
+        {"id": r[0], "title": r[1], "uploaded_at": r[2], "segments": r[3], "roman_done": r[4]}
+        for r in rows
+    ]
+    active_jobs = [
+        {"id": r[0], "title": r[1], "status": r[2], "detail": r[3], "progress": r[4]}
+        for r in active
+    ]
+    return render_template("uploads.html", uploads=uploads, active_jobs=active_jobs)
+
+
+@app.route("/video/<int:video_id>/export.csv")
+def video_export_csv(video_id):
+    """Download a video's transcript as CSV: timestamp, urdu, roman."""
+    if not db.exists():
+        abort(404)
+    conn = db.connect_ro()
+    try:
+        data = search.get_video(conn, video_id)
+    finally:
+        conn.close()
+    if data is None:
+        abort(404)
+    blob = export.transcript_csv(data)
+    safe = "".join(c for c in (data["title"] or "transcript") if c.isalnum() or c in " -_")[:60].strip()
+    return app.response_class(
+        blob, mimetype="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{safe or "transcript"}.csv"'},
+    )
+
+
+@app.route("/api/upload_audio", methods=["POST"])
+def api_upload_audio():
+    """Accept a user audio file, save it, and enqueue a Soniox transcription job.
+    A worker transcribes + romanizes it (source='user_upload'), after which it is
+    searchable and readable like any other video, with a karaoke player. Progress
+    polls via /api/job/<id>, same as a YouTube transcribe."""
+    if not db.exists():
+        return jsonify({"ok": False, "error": "store not built yet"}), 503
+    f = request.files.get("audio")
+    if not f or not f.filename:
+        return jsonify({"ok": False, "error": "no audio file"}), 400
+    # Any format is accepted: the worker converts everything to mp3 with ffmpeg
+    # and rejects files that aren't decodable audio. Keep only a sane extension.
+    ext = f.filename.rsplit(".", 1)[-1].lower() if "." in f.filename else "bin"
+    ext = "".join(c for c in ext if c.isalnum())[:8] or "bin"
+
+    os.makedirs(config.UPLOAD_DIR, exist_ok=True)
+    dest = os.path.join(config.UPLOAD_DIR, f"{uuid.uuid4().hex}.{ext}")
+    f.save(dest)
+    if os.path.getsize(dest) == 0:
+        os.remove(dest)
+        return jsonify({"ok": False, "error": "empty file"}), 400
+
+    title = (request.form.get("title") or "").strip()
+    if not title:
+        # Nicely-titled fallback from the filename: "meri_recording-2.m4a" -> "Meri Recording 2"
+        stem = os.path.splitext(secure_filename(f.filename))[0]
+        title = " ".join(w.capitalize() for w in stem.replace("_", " ").replace("-", " ").split()) or "Untitled Upload"
+    conn = db.connect()
+    try:
+        job_id = jobs.enqueue_upload(conn, dest, title)
+    finally:
+        conn.close()
+    return jsonify({"ok": True, "job_id": job_id, "status": "queued"})
+
+
+@app.route("/media/<int:video_id>")
+def media(video_id):
+    """Serve a user-uploaded video's audio file for the karaoke player."""
+    conn = db.connect_ro()
+    try:
+        row = conn.execute(
+            "SELECT audio_path FROM videos WHERE id=? AND source='user_upload'", (video_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+    if not row or not row[0] or not os.path.exists(row[0]):
+        abort(404)
+    return send_file(row[0], conditional=True)  # conditional → range requests, so <audio> can seek
 
 
 @app.route("/api/upload_cookies", methods=["POST"])
@@ -520,36 +760,25 @@ def api_feedback():
 
 @app.route("/library")
 def library_page():
-    """The creator's library: Saved (with tag playlists), Romanized, and History.
-    One page, three tabs; each is searchable and date-filterable."""
+    """Retired: the creator library (Saved/Romanized/History/Searches) was a
+    grab-bag that duplicated /videos and /dashboard; its one useful part (search
+    usage) now lives on /usage. Kept as a redirect so old links don't break;
+    saving (★) still works, it just has no dedicated list page."""
+    return redirect(url_for("usage_page"))
+
+
+@app.route("/usage")
+def usage_page():
+    """Owner usage dashboard: is the platform being used? Search + upload
+    activity from data already logged (no per-visitor tracking exists)."""
     if not db.exists():
-        return render_template("library.html", no_store=True)
-    tab = request.args.get("tab", "saved")
-    if tab not in ("saved", "romanized", "history"):
-        tab = "saved"
-    q = (request.args.get("q") or "").strip()
-    tag = (request.args.get("tag") or "").strip()
-    date_from = (request.args.get("from") or "").strip()
-    date_to = (request.args.get("to") or "").strip()
-    conn = db.connect()
+        return render_template("usage.html", no_store=True, stats=None)
+    conn = db.connect_ro()
     try:
-        ctx = {
-            "tab": tab, "q": q, "tag": tag, "date_from": date_from, "date_to": date_to,
-            "tags": library.all_tags(conn), "counts": library.counts(conn),
-            "saved": [], "romanized": [], "history": [],
-        }
-        if tab == "saved":
-            ctx["saved"] = library.list_saved(conn, tag=tag or None, q=q or None,
-                                              date_from=date_from or None, date_to=date_to or None)
-        elif tab == "romanized":
-            ctx["romanized"] = library.list_romanized(conn, q=q or None,
-                                                      date_from=date_from or None, date_to=date_to or None)
-        else:
-            ctx["history"] = library.history(conn, q=q or None,
-                                            date_from=date_from or None, date_to=date_to or None)
+        stats = library.usage_stats(conn)
     finally:
         conn.close()
-    return render_template("library.html", no_store=False, **ctx)
+    return render_template("usage.html", no_store=False, stats=stats)
 
 
 @app.route("/api/save/video", methods=["POST"])
