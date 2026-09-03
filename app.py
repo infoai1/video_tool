@@ -24,6 +24,24 @@ from werkzeug.utils import secure_filename
 app = Flask(__name__)
 app.secret_key = config.SECRET_KEY
 app.config["MAX_CONTENT_LENGTH"] = config.MAX_UPLOAD_MB * 1024 * 1024
+# 2026-09-02 audit: cookie hardening. Secure flag is switched on by the env file
+# (VIDEO_TOOL_COOKIE_SECURE=1) so the plain-http test client keeps working.
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=os.environ.get("VIDEO_TOOL_COOKIE_SECURE", "0") == "1",
+    PERMANENT_SESSION_LIFETIME=datetime.timedelta(days=30),
+)
+
+# Login throttle: 5 wrong passwords from one address => 10-minute lockout.
+# nginx proxies from 127.0.0.1, so the real address is the first X-Forwarded-For hop.
+_LOGIN_FAILS = {}
+_LOGIN_MAX, _LOGIN_WINDOW = 5, 600
+
+
+def _client_ip():
+    fwd = request.headers.get("X-Forwarded-For", "")
+    return (fwd.split(",")[0].strip() if fwd else "") or request.remote_addr or "?"
 
 # Migrate the store in place on startup so newly-added columns (uploaded_at,
 # audio_path, word_tokens) exist before any query touches them. Idempotent.
@@ -58,14 +76,24 @@ def login():
         return redirect(url_for("index"))
     error = None
     if request.method == "POST":
+        ip, now = _client_ip(), datetime.datetime.now().timestamp()
+        fails, since = _LOGIN_FAILS.get(ip, (0, now))
+        if now - since > _LOGIN_WINDOW:
+            fails, since = 0, now
+        if fails >= _LOGIN_MAX:
+            return render_template("login.html",
+                                   error="Too many attempts. Try again in 10 minutes."), 429
         u = request.form.get("username", "")
         p = request.form.get("password", "")
         # Compare as bytes: hmac.compare_digest rejects non-ASCII str (the
         # password may contain characters like ¥ ×).
         if any(_eq(u, _cu) and _eq(p, _cp) for _cu, _cp in config.AUTH_USERS):
             session["user"] = u
+            session.permanent = True
+            _LOGIN_FAILS.pop(ip, None)
             dest = request.args.get("next") or url_for("index")
             return redirect(dest if dest.startswith("/") else url_for("index"))
+        _LOGIN_FAILS[ip] = (fails + 1, since)
         error = "Wrong username or password."
     return render_template("login.html", error=error)
 
