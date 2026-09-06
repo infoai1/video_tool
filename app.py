@@ -12,6 +12,8 @@ import uuid
 from urllib.parse import urlencode
 
 import sqlite3
+import re as _re
+_re_mwk = _re.compile(r"\s*(by\s+)?Maulana\s+Wahiduddin\s+Khan\s*", _re.I)
 
 import config
 import db
@@ -294,14 +296,158 @@ def index():
 
 @app.route("/videos")
 def videos():
+    """Watch & Read: the page opens on a lecture ready to play -- today's pick
+    from the lectures most clips were cut from, or ?v=<id> -- with the verses
+    and hadith he cites in it as chapters under the player and an 'Up next'
+    rail; then filter chips (?era, ?sort=clips, ?dur=short, ?q) and a grid of
+    thumbnail cards paged 48 at a time (?offset). Counts are live from roman.db,
+    clips.db and refs.db."""
     if not db.exists():
         return render_template("videos.html", videos=None, no_store=True)
+    a = request.args
+    q = (a.get("q") or "").strip()
+    era = (a.get("era") or "").strip()
+    sort = (a.get("sort") or "").strip()
+    dur = (a.get("dur") or "").strip()
+    v_sel = a.get("v", type=int)
+    offset = max(0, a.get("offset", type=int) or 0)
     conn = db.connect_ro()
     try:
-        vids = search.list_videos(conn)
+        rows = conn.execute(
+            """
+            SELECT v.id, v.title, v.youtube_url, v.year, v.source_video_id,
+                   COUNT(s.id), COUNT(s.roman_text), MAX(s.start_time)
+            FROM videos v LEFT JOIN segments s ON s.video_id = v.id
+            WHERE COALESCE(v.content_type, '') != 'omit'
+            GROUP BY v.id
+            """).fetchall()
     finally:
         conn.close()
-    return render_template("videos.html", videos=vids, no_store=False)
+    clips_by_ann, refs_by_yid = {}, {}
+    try:
+        d = sqlite3.connect(f"file:{CLIP_STUDY_CLIPS}?mode=ro", uri=True)
+        clips_by_ann = dict(d.execute("SELECT video_id, COUNT(*) FROM clips GROUP BY video_id").fetchall())
+        d.close()
+    except Exception:  # noqa: BLE001 -- clip counts are a nicety
+        pass
+    try:
+        d = sqlite3.connect(f"file:{CLIP_STUDY_REFS}?mode=ro", uri=True)
+        refs_by_yid = dict(d.execute("SELECT yid, COUNT(*) FROM refs WHERE ok=1 GROUP BY yid").fetchall())
+        d.close()
+    except Exception:  # noqa: BLE001
+        pass
+
+    def _clean(t):
+        t = (t or "").strip()
+        t = _re_mwk.sub(" ", t)
+        t = _re.sub(r"\s*[|\-–—]\s*[|\-–—]\s*", " · ", t)
+        t = _re.sub(r"\s*\|\s*", " · ", t)
+        t = _re.sub(r"\s{2,}", " ", t).strip(" ·-–—,|")
+        return t or "Untitled lecture"
+
+    def _dur(secs):
+        secs = int(secs or 0)
+        if not secs:
+            return ""
+        return f"{secs // 3600}:{(secs % 3600) // 60:02d}" if secs >= 3600 else f"{secs // 60}:{secs % 60:02d}"
+
+    vids = []
+    for r in rows:
+        yr = int(r[3]) if r[3] is not None and str(r[3]).isdigit() else None
+        yt = search.youtube_id(r[2]) or ""
+        vids.append({
+            "id": r[0], "title": _clean(r[1]), "yt": yt, "year": yr,
+            "segments": r[5], "done": r[6], "secs": int(r[7] or 0),
+            "pct": int(round(100 * (r[6] or 0) / r[5])) if r[5] else 0,
+            "dur": _dur(r[7]), "clips": clips_by_ann.get(r[4], 0), "refs": refs_by_yid.get(yt, 0),
+            "url": request.url_root.rstrip("/") + f"/videos?v={r[0]}",
+        })
+    total = len(vids)
+    by_id = {v["id"]: v for v in vids}
+
+    # the stage: today's lecture (rotating through the 30 most-clipped) or ?v=
+    ranked = sorted((v for v in vids if v["yt"] and v["clips"]), key=lambda v: (-v["clips"], -v["refs"]))
+    day = int(datetime.date.today().strftime("%j"))
+    hero, hero_label = None, ""
+    if v_sel and v_sel in by_id:
+        hero, hero_label = by_id[v_sel], (str(by_id[v_sel]["year"]) if by_id[v_sel]["year"] else "Lecture")
+    elif ranked:
+        pool = ranked[:30]
+        hero, hero_label = pool[day % len(pool)], "Today's lecture"
+    chapters, upnext = [], []
+    if hero:
+        try:
+            d = sqlite3.connect(f"file:{CLIP_STUDY_REFS}?mode=ro", uri=True)
+            seen = set()
+            for t, kind, cite, surah, ayah, hno, grp in d.execute(
+                    "SELECT t, kind, citation, surah, ayah, hadith_no, grp FROM refs "
+                    "WHERE ok=1 AND yid=? AND t IS NOT NULL ORDER BY t", (hero["yt"],)):
+                if kind == "quran" and surah:
+                    label = f"Quran {surah}:{ayah}"
+                else:
+                    label = (cite or "").strip()
+                if not label or label in seen:
+                    continue
+                seen.add(label)
+                chapters.append({"t": int(t), "hhmm": _hhmmss(int(t)), "label": label})
+                if len(chapters) >= 12:
+                    break
+            d.close()
+        except Exception:  # noqa: BLE001
+            chapters = []
+        if v_sel and hero["year"]:
+            cand = [v for v in vids if v["year"] == hero["year"] and v["id"] != hero["id"] and v["yt"]]
+            cand.sort(key=lambda v: (-v["clips"], -v["refs"]))
+        else:
+            cand = [v for v in ranked if v["id"] != hero["id"]]
+        upnext = cand[:5]
+
+    # the list
+    ERAS = [("2020s", "2020s", 2020, 2029), ("2010s", "2010s", 2010, 2019), ("2000s", "2000s", 2000, 2009)]
+    def era_of(yr):
+        for k, _l, lo, hi in ERAS:
+            if yr is not None and lo <= yr <= hi:
+                return k
+        return "undated"
+    items = vids
+    if q:
+        ql = q.lower()
+        items = [v for v in items if ql in v["title"].lower()]
+    if era:
+        items = [v for v in items if era_of(v["year"]) == era]
+    if dur == "short":
+        items = [v for v in items if 0 < v["secs"] < 3600]
+    if sort == "clips":
+        items.sort(key=lambda v: (-v["clips"], -v["refs"], v["title"].lower()))
+    elif sort == "refs":
+        items.sort(key=lambda v: (-v["refs"], -v["clips"], v["title"].lower()))
+    else:
+        items.sort(key=lambda v: (-(v["year"] or 0), -v["clips"], v["title"].lower()))
+    n_found = len(items)
+    PAGE = 48
+    page_items = items[offset:offset + PAGE]
+
+    def href(**kw):
+        params = {"q": q, "era": era, "sort": sort, "dur": dur}
+        params.update(kw)
+        params = {k: val for k, val in params.items() if val}
+        return "/videos" + ("?" + urlencode(params) if params else "")
+    filters = [{"label": "All", "count": f"{total:,}", "on": not era and not sort and not dur, "href": "/videos" + (f"?q={q}" if q else "")}]
+    for k, l, lo, hi in ERAS:
+        n = sum(1 for v in vids if era_of(v["year"]) == k)
+        if n:
+            filters.append({"label": l, "count": n, "on": era == k, "href": href(era="" if era == k else k, offset="")})
+    filters.append({"label": "Most clipped", "count": None, "on": sort == "clips", "href": href(sort="" if sort == "clips" else "clips", offset="")})
+    filters.append({"label": "Most referenced", "count": None, "on": sort == "refs", "href": href(sort="" if sort == "refs" else "refs", offset="")})
+    filters.append({"label": "Under an hour", "count": None, "on": dur == "short", "href": href(dur="" if dur == "short" else "short", offset="")})
+    more_href = href(offset=offset + PAGE) if n_found > offset + PAGE else ""
+    order = {"clips": "most clipped first", "refs": "most referenced first"}.get(sort, "newest first")
+    list_note = (f"{n_found:,} lecture{'' if n_found == 1 else 's'}" + (f" matching “{q}”" if q else "")
+                 + f", {order}")
+    return render_template("videos.html", videos=vids, no_store=False, hero=hero, hero_label=hero_label,
+                           chapters=chapters, upnext=upnext, filters=filters, items=page_items,
+                           more_href=more_href, more_n=min(PAGE, n_found - offset - PAGE), q=q, era=era,
+                           list_note=list_note)
 
 
 
@@ -312,6 +458,7 @@ def videos():
 # id held in videos.source_video_id -- they differ for 2,138 of 2,178 videos, so
 # never assume they are the same number.
 CLIP_STUDY_CLIPS = "/root/clip_study/clips.db"
+CLIP_STUDY_REFS = "/root/clip_study/refs.db"
 CLIP_STUDY_QA = "/root/clip_study/qa.db"
 
 
