@@ -7,7 +7,11 @@ import datetime
 import hmac
 import json
 import os
+import sys
 import uuid
+from urllib.parse import urlencode
+
+import sqlite3
 
 import config
 import db
@@ -19,7 +23,20 @@ import transcribe
 import transliterate
 from flask import (Flask, abort, jsonify, redirect, render_template, request,
                    send_file, session, url_for)
+from markupsafe import Markup
 from werkzeug.utils import secure_filename
+
+# The header, footer and phone tab bar are shared with the clips app so every
+# page of the site wears the same shell (shukr-app/shell.py).
+sys.path.insert(0, os.environ.get("VIDEO_TOOL_SHELL_DIR", "/root/shukr-app"))
+try:
+    import situations as _situations
+except Exception:  # noqa: BLE001 -- ships with the clips app; the page works without it
+    _situations = None
+try:
+    import shell as _shell
+except Exception:  # noqa: BLE001 - a missing shell must not take the site down
+    _shell = None
 
 app = Flask(__name__)
 app.secret_key = config.SECRET_KEY
@@ -51,7 +68,16 @@ if db.exists():
 # Auth is on only when a credential is configured (auth.json / env), so local
 # dev and tests aren't gated.
 AUTH_ENABLED = bool(config.AUTH_USER and config.AUTH_PASSWORD)
-_OPEN_ENDPOINTS = {"login", "static", "health"}
+# Owner decision 2026-09-05: the site is public. Seekers search, read and play
+# without an account; only the operator's pages and the APIs that queue work
+# or write to the library need the login.
+_OPERATOR_ENDPOINTS = {
+    "upload_page", "uploads_page", "dashboard", "usage_page", "library_page",
+    "api_transcribe", "api_upload_audio", "api_upload_cookies", "api_sync_channel",
+    "api_romanize_video", "api_romanize_all", "api_job", "api_jobs",
+    "api_romanize",  # owner 2026-09-05: the LLM filler is not for visitors
+    "api_save_video", "api_save_segment", "api_bookmark_delete", "api_bookmark_tag",
+}
 
 
 def _eq(a, b):
@@ -63,11 +89,37 @@ def _eq(a, b):
 def _require_login():
     if not AUTH_ENABLED or session.get("user"):
         return None
-    if request.endpoint in _OPEN_ENDPOINTS:
+    if request.endpoint not in _OPERATOR_ENDPOINTS:
         return None
     if request.path.startswith("/api/"):
         return jsonify({"error": "authentication required"}), 401
     return redirect(url_for("login", next=request.path))
+
+
+@app.context_processor
+def _who():
+    """`operator` is true for the signed-in owner (or always when no credential
+    is configured, e.g. tests); templates hide upload/save/dashboard controls
+    from everyone else. Also hands base.html the shared shell pieces."""
+    signed = bool(session.get("user"))
+    operator = (not AUTH_ENABLED) or signed
+    ctx = {"operator": operator, "auth_on": AUTH_ENABLED,
+           "shell_css": "", "shell_header": "", "shell_footer": "", "shell_tabbar": ""}
+    if _shell is not None:
+        q = (request.args.get("q") or "").strip()
+        if search.youtube_id(q):
+            q = ""
+        ep = request.endpoint or ""
+        active = {"index": "home", "videos": "videos"}.get(ep, "")
+        ctx.update(
+            shell_css=Markup(_shell.CSS),
+            shell_header=Markup(_shell.header(
+                q=q, active=active, operator=operator, signed_in=signed, auth_on=AUTH_ENABLED,
+                search_open=bool(q), hide_search=(ep == "index" and not q))),
+            shell_footer=Markup(_shell.footer()),
+            shell_tabbar=Markup(_shell.tabbar(active)),
+        )
+    return ctx
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -91,8 +143,9 @@ def login():
             session["user"] = u
             session.permanent = True
             _LOGIN_FAILS.pop(ip, None)
-            dest = request.args.get("next") or url_for("index")
-            return redirect(dest if dest.startswith("/") else url_for("index"))
+            # Owner decision 2026-09-02: every login lands on the main page,
+            # never back on whatever page happened to trigger the login.
+            return redirect(url_for("index"))
         _LOGIN_FAILS[ip] = (fails + 1, since)
         error = "Wrong username or password."
     return render_template("login.html", error=error)
@@ -154,6 +207,7 @@ def _landing_context_uncached():
     return {
         "videos": videos, "romanized_pct": pct, "saved": saved,
         "playlists": tags, "recent": recent, "topics": _SUGGESTED_TOPICS,
+        "situations": _situations.featured() if _situations else [],
     }
 
 
@@ -167,10 +221,17 @@ def index():
     active_job = None
     roman_terms, urdu_terms = [], []
     year_counts, undated_count, year_sel, sort = [], 0, "", ""
+    total_found = 0
     year_counts_d = {}
     saved_segments = set()
     landing = None
     if q:
+        # One box, one engine: a question or a word goes to the meaning search
+        # (/clips/search), which answers with his own Q&A first. A pasted
+        # YouTube link still opens that lecture's transcript here, and
+        # mode=words keeps the exact-word transcript search reachable.
+        if not search.youtube_id(q) and (request.args.get("mode") or "") != "words":
+            return redirect("/clips/search?" + urlencode({"q": q}))
         # Writable: search caches the query's Urdu transliteration on first use.
         conn = db.connect()
         try:
@@ -180,6 +241,9 @@ def index():
                 if vid:
                     return redirect(url_for("video", video_id=vid))
                 youtube_not_found = True
+                if AUTH_ENABLED and not session.get("user"):
+                    # visitors: the clips app explains, notes the request and pings the owner
+                    return redirect("/search?" + urlencode({"q": q}))
                 active = jobs.active_for_url(conn, q)
                 active_job = active[0] if active else None
             else:
@@ -202,14 +266,15 @@ def index():
                 elif sort == "old":
                     hits = sorted(hits, key=lambda h: (h.get("year") or 9999))
                 year_counts = sorted(year_counts_d.items(), key=lambda kv: kv[0], reverse=True)
-                total_found = len(all_hits)
+                n_all = len(all_hits)
+                total_found = len(hits)  # after the year filter: the number the page claims
                 hits = hits[:60]
                 roman_terms, urdu_terms = search.query_highlight_terms(conn, q)
                 saved_segments = library.saved_segment_set(
                     conn, [h["segment_id"] for h in hits])
                 try:  # best-effort search logging (never break search)
                     conn.execute("INSERT INTO search_log (q, results, at) VALUES (?, ?, ?)",
-                                 (q, total_found, datetime.datetime.utcnow().isoformat()))
+                                 (q, n_all, datetime.datetime.utcnow().isoformat()))
                     conn.commit()
                 except Exception:
                     pass
@@ -223,6 +288,7 @@ def index():
         roman_terms=roman_terms, urdu_terms=urdu_terms,
         saved_segments=saved_segments, landing=landing,
         year_counts=year_counts, undated_count=undated_count, year_sel=year_sel, sort=sort,
+        total_found=total_found,
     )
 
 
@@ -238,6 +304,48 @@ def videos():
     return render_template("videos.html", videos=vids, no_store=False)
 
 
+
+
+# Clips and Q&A are cut from these lectures by the separate clips app; read them
+# read-only so a lecture page can show what came out of it. NOTE the id bridge:
+# this app's video ids are roman.db ids, while clips/qa key on the annotation.db
+# id held in videos.source_video_id -- they differ for 2,138 of 2,178 videos, so
+# never assume they are the same number.
+CLIP_STUDY_CLIPS = "/root/clip_study/clips.db"
+CLIP_STUDY_QA = "/root/clip_study/qa.db"
+
+
+def _lecture_extras(conn, video_id):
+    """(clips, qa) cut from this lecture. Best effort -- never break the page."""
+    row = conn.execute(
+        "SELECT source_video_id FROM videos WHERE id = ?", (video_id,)).fetchone()
+    ann = row[0] if row and row[0] else None
+    clips, qa = [], []
+    if not ann:
+        return clips, qa
+    try:
+        d = sqlite3.connect(f"file:{CLIP_STUDY_CLIPS}?mode=ro", uri=True)
+        clips = [{"start": int(r[0] or 0), "hhmm": _hhmmss(r[0] or 0),
+                  "seconds": int(r[1] or 0), "scale": (r[2] or "").title(),
+                  "topic": r[3] or ""}
+                 for r in d.execute(
+                     "SELECT start_time, seconds, scale, topic FROM clips "
+                     "WHERE video_id = ? ORDER BY start_time", (ann,))]
+        d.close()
+    except Exception:
+        clips = []
+    try:
+        d = sqlite3.connect(f"file:{CLIP_STUDY_QA}?mode=ro", uri=True)
+        qa = [{"start": int(r[0] or 0), "hhmm": _hhmmss(r[0] or 0), "q": r[1] or ""}
+              for r in d.execute(
+                  "SELECT q_start, question_title FROM qa_units WHERE source_video_id = ? "
+                  "AND has_answer = 1 AND refined = 1 AND question_title != '' "
+                  "ORDER BY q_start", (ann,))]
+        d.close()
+    except Exception:
+        qa = []
+    return clips, qa
+
 @app.route("/video/<int:video_id>")
 def video(video_id):
     if not db.exists():
@@ -247,6 +355,7 @@ def video(video_id):
     q = (request.args.get("q") or "").strip()
     conn = db.connect()  # writable: caches query transliteration + reads saved-state
     matched_ids, roman_terms, urdu_terms = [], [], []
+    lecture_clips, lecture_qa = [], []
     saved = {"video": False, "segments": []}
     try:
         data = search.get_video(conn, video_id)
@@ -255,12 +364,14 @@ def video(video_id):
             if q:
                 matched_ids = search.video_matches(conn, video_id, q)
                 roman_terms, urdu_terms = search.query_highlight_terms(conn, q)
+            lecture_clips, lecture_qa = _lecture_extras(conn, video_id)
     finally:
         conn.close()
     if data is None:
         abort(404)
     return render_template(
         "video.html", video=data, youtube_id=search.youtube_id(data["youtube_url"]),
+        lecture_clips=lecture_clips, lecture_qa=lecture_qa,
         q=q, matched_ids=matched_ids, roman_terms=roman_terms, urdu_terms=urdu_terms,
         saved_video=saved["video"], saved_segments=set(saved["segments"]),
     )
