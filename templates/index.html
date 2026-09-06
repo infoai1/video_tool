@@ -1,99 +1,38 @@
 {% extends "base.html" %}
+{% block body_class %}{{ 'landing-page' if landing else '' }}{% endblock %}
+{% block main_class %}{{ "landing" if landing }}{% endblock %}
 {% block content %}
 {% if landing %}
-<section class="hero">
-  <p class="eyebrow">Maulana Wahiduddin Khan · CPS International</p>
-  <h1 class="hero-title">Search the lectures,<br>in Roman Urdu.</h1>
-  <p class="hero-sub">Type any word or phrase — spelling doesn’t need to be exact
-    (<em>namaz</em>, <em>namaaz</em> and <em>namāz</em> all match). Or paste a
-    YouTube link to open that video’s transcript.</p>
-
-  <form class="search hero-search" method="get" action="{{ url_for('index') }}">
-    <input type="search" name="q" value="" placeholder="Search Roman Urdu — or paste a YouTube link" autofocus>
-    <button type="submit">Search</button>
-  </form>
-
-  {% if landing.topics %}
-  <div class="topic-row">
-    <span class="tr-lbl">Try:</span>
-    {% for t in landing.topics %}
-      <a class="topic" href="{{ url_for('index', q=t) }}">{{ t }}</a>
-    {% endfor %}
+<section class="hero catch" id="catch">
+  <div class="catch-field" id="catch-field" aria-hidden="true"></div>
+  <div class="catch-box">
+    <h1 class="hero-title">What is on your mind?</h1>
+    <form class="search hero-search" id="q" method="get" action="{{ url_for('index') }}">
+      <input type="search" name="q" id="catch-q" value="" placeholder="Ask a question or search a word" autocomplete="off">
+      <button type="submit" class="go" aria-label="Search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></button>
+      <a class="hero-alt" href="/situations">Situations <span aria-hidden="true">&rarr;</span></a>
+    </form>
   </div>
-  {% endif %}
-
-  <div class="hero-stats">
-    <span><strong>{{ "{:,}".format(landing.videos) }}</strong> lectures</span>
-    <span class="dot">·</span>
-    <span>searchable in <strong>Roman &amp; Urdu</strong></span>
-    {% if landing.saved %}<span class="dot">·</span>
-    <span><strong>{{ "{:,}".format(landing.saved) }}</strong> in your library</span>{% endif %}
   </div>
-</section>
 
-<section class="land-sec">
-  <div class="qa-promo">
-    <div class="qa-head">
-      <span class="qa-eyebrow">Questions &amp; Answers</span>
-      <h2 class="qa-title">The questions people asked Maulana</h2>
-      <p class="qa-sub">2,900+ real questions from his sessions — each paired with his own answer.
-        Play the exchange and follow along with a line-by-line karaoke transcript.</p>
-    </div>
-    <div class="qa-chips">
-      <a class="qa-chip" href="/clips/qa?cat=Society+%26+Dawah">Society &amp; Dawah</a>
-      <a class="qa-chip" href="/clips/qa?cat=Faith+%26+God">Faith &amp; God</a>
-      <a class="qa-chip" href="/clips/qa?cat=Life+%26+Wisdom">Life &amp; Wisdom</a>
-      <a class="qa-chip" href="/clips/qa?cat=Quran+%26+Tafsir">Quran &amp; Tafsir</a>
-      <a class="qa-chip qa-all" href="/clips/qa">Browse all 2,900+ &rarr;</a>
-    </div>
-  </div>
 </section>
+<script type="application/json" id="catch-fallback">[
+ {"q":"I lose my temper with my family","t":"Dealing with Family Discord and Anger","a":"Nazneen","c":"Delhi","y":2012,"s":"2:18","id":153},
+ {"q":"I know God has a plan, but I still feel frustrated","t":"Overcoming Frustration Despite Knowing God's Plan","a":"Naghma","c":"Delhi","y":2015,"s":"1:49","id":3230},
+ {"q":"Is it wrong to get angry?","t":"Is anger a positive quality?","a":"Javed","c":"Ahmedabad","y":2020,"s":"2:19","id":1890},
+ {"q":"Will God forgive what I did years ago?","t":"Will past sins be forgiven after sincere repentance?","a":"Razia","c":"","y":2013,"s":"3:34","id":199},
+ {"q":"My work leaves no time for God","t":"Focusing on God amidst worldly duties","a":"Farida","c":"Delhi","y":2010,"s":"1:26","id":1116},
+ {"q":"My son and I cannot talk without a fight","t":"Managing generation gap with parents","a":"Sahil","c":"Bangalore","y":2012,"s":"1:03","id":1037},
+ {"q":"What is spirituality, really?","t":"What is spirituality and how to nurture it?","a":"Asim","c":"Kashmir","y":2021,"s":"5:47","id":1476},
+ {"q":"Where do I even start to become wise?","t":"Where to begin to become wise","a":"Usman","c":"Ahmedabad","y":2016,"s":"2:17","id":3000}
+]</script>
+<script src="{{ url_for('static', filename='catch.js') }}" defer></script>
 
-<section class="land-sec">
-  <a class="clips-promo" href="/clips">
-    <div class="cp-text">
-      <span class="cp-eyebrow">For content creators</span>
-      <h2 class="cp-title">Ready-to-cut clips</h2>
-      <p class="cp-sub">Every lecture pre-split into standalone short, medium and long
-        moments — pick a length, preview it, and share.</p>
-    </div>
-    <span class="cp-cta">Browse clips →</span>
-  </a>
-</section>
-
-<section class="land-sec upload-cta">
-  <a class="upload-card" href="{{ url_for('upload_page') }}">
-    <span class="uc-icon" aria-hidden="true">
-      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M12 15V4"/><path d="m7 9 5-5 5 5"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/>
-      </svg>
-    </span>
-    <span class="uc-body">
-      <span class="uc-title">Transcribe your own audio</span>
-      <span class="uc-sub">Upload any recording — get a word-by-word karaoke transcript in Urdu &amp; Roman, with DOCX / CSV download.</span>
-    </span>
-    <span class="uc-go" aria-hidden="true">→</span>
-  </a>
-  <p class="uc-mine"><a href="{{ url_for('uploads_page') }}">My uploads</a></p>
-</section>
-
-{% if landing.playlists %}
-<section class="land-sec">
-  <div class="sec-head">
-    <h2>Your playlists</h2>
-    <a class="see-all" href="{{ url_for('library_page', tab='saved') }}">Open library →</a>
-  </div>
-  <div class="playlists">
-    {% for p in landing.playlists %}
-      <a class="chip" href="{{ url_for('library_page', tab='saved', tag=p.tag) }}"># {{ p.tag }} <span class="c">{{ p.count }}</span></a>
-    {% endfor %}
-  </div>
-</section>
-{% endif %}
 
 {% else %}{# a query is present, or the store is missing — show compact search + results #}
 <form class="search" method="get" action="{{ url_for('index') }}">
-  <input type="search" name="q" value="{{ q|e }}" autocomplete="off" placeholder="Search Roman Urdu — or paste a YouTube link"{% if not q %} autofocus{% endif %}>
+  <input type="search" name="q" value="{{ q|e }}" autocomplete="off" placeholder="Exact word in Roman Urdu — or paste a YouTube link"{% if not q %} autofocus{% endif %}>
+  <input type="hidden" name="mode" value="words">
   <button type="submit">Search</button>
 </form>
 
@@ -101,6 +40,7 @@
 <form class="filterbar" method="get" action="{{ url_for('index') }}"
       style="display:flex;gap:16px;align-items:center;margin:14px 0 4px;font-size:14px;color:var(--muted,#9a9a92)">
   <input type="hidden" name="q" value="{{ q|e }}">
+  <input type="hidden" name="mode" value="words">
   <label style="display:flex;gap:6px;align-items:center">Year
     <select name="year" onchange="this.form.submit()" style="padding:6px 10px;border-radius:8px">
       <option value="">All years</option>
@@ -122,7 +62,9 @@
 
 {% if youtube_not_found %}
   <div class="notice">
-    {% if active_job %}
+    {% if not operator %}
+      <p>That lecture isn't in the library yet.</p>
+    {% elif active_job %}
       <p>This video is already queued for transcription
          (<a href="{{ url_for('dashboard') }}">job #{{ active_job }}</a>).
          It'll appear in the library once done.</p>
@@ -184,7 +126,7 @@ python cli.py transliterate</pre>
       </div>
       <div class="player-wrap"><div id="player"></div></div>
     </div>
-    <p class="count">{{ hits|length }} result{{ '' if hits|length == 1 else 's' }} for “{{ q|e }}”</p>
+    <p class="count">{{ "{:,}".format(total_found) }} result{{ '' if total_found == 1 else 's' }} for “{{ q|e }}”{% if total_found > hits|length %} · showing the first {{ hits|length }}{% endif %}</p>
     <ul class="hits">
       {% for h in hits %}
       <li class="hit" data-video="{{ h.video_id }}"{% if h.semantic %} data-semantic="1"{% endif %}
@@ -214,18 +156,20 @@ python cli.py transliterate</pre>
                     title="Read the full transcript here, jump to this match">
               <span class="ico" aria-hidden="true">☰</span> Read
             </button>
+            {% if operator %}
             <button type="button" class="act ghost hit-save{% if h.segment_id in saved_segments %} on{% endif %}"
                     data-video="{{ h.video_id }}" data-seg="{{ h.segment_id }}" data-t="{{ h.start_time|int }}"
                     title="Save this snippet to your library">
               <span class="ico star" aria-hidden="true">{{ '★' if h.segment_id in saved_segments else '☆' }}</span> Save
             </button>
+            {% endif %}
           </div>
         </div>
         <div class="expand-panel" hidden></div>
       </li>
       {% endfor %}
     </ul>
-  {% else %}
+  {% elif not youtube_not_found %}
     <p class="count">No results for “{{ q|e }}”.</p>
   {% endif %}
 {% else %}
@@ -269,7 +213,7 @@ python cli.py transliterate</pre>
     tag.src = 'https://www.youtube.com/iframe_api';
     document.head.appendChild(tag);
     window.onYouTubeIframeAPIReady = function () {
-      player = new YT.Player('player', { playerVars: { rel: 0 },
+      player = new YT.Player('player', { playerVars: { rel: 0, playsinline: 1 },
         events: { onReady: function () { if (pending) { play(pending.yt, pending.t, pending.title); pending = null; } } } });
     };
     function play(yt, t, title) {
