@@ -43,6 +43,12 @@ except Exception:  # noqa: BLE001 - a missing shell must not take the site down
 app = Flask(__name__)
 app.secret_key = config.SECRET_KEY
 app.config["MAX_CONTENT_LENGTH"] = config.MAX_UPLOAD_MB * 1024 * 1024
+# Static files (CSS/JS/icons) were sent with Cache-Control: no-cache -- Flask and
+# Werkzeug's own default when SEND_FILE_MAX_AGE_DEFAULT is unset -- so the browser
+# re-validated every one of them on every single page load. An hour lets a repeat
+# visit skip that round trip entirely; any deploy still reaches returning visitors
+# within the hour, and ETags still catch changes sooner if a visitor reloads.
+app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 3600
 # 2026-09-02 audit: cookie hardening. Secure flag is switched on by the env file
 # (VIDEO_TOOL_COOKIE_SECURE=1) so the plain-http test client keeps working.
 app.config.update(
