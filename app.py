@@ -7,6 +7,7 @@ import datetime
 import hmac
 import json
 import os
+import time
 import sys
 import uuid
 from urllib.parse import urlencode
@@ -49,6 +50,15 @@ app.config["MAX_CONTENT_LENGTH"] = config.MAX_UPLOAD_MB * 1024 * 1024
 # visit skip that round trip entirely; any deploy still reaches returning visitors
 # within the hour, and ETags still catch changes sooner if a visitor reloads.
 app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 3600
+# The templates carry their stylesheets inline, re-sent on every navigation. This
+# keeps them inline the first time a visitor is sent them, warms the browser cache
+# afterwards, and links to the cached file on every page after that -- sharing one
+# directory with the clips app so a bundle is fetched once for the whole site.
+try:
+    import assetcache as _assetcache
+    _assetcache.install(app)
+except Exception:  # noqa: BLE001 - caching must never take the site down
+    pass
 # 2026-09-02 audit: cookie hardening. Secure flag is switched on by the env file
 # (VIDEO_TOOL_COOKIE_SECURE=1) so the plain-http test client keeps working.
 app.config.update(
@@ -300,23 +310,35 @@ def index():
     )
 
 
-@app.route("/videos")
-def videos():
-    """Watch & Read: the page opens on a lecture ready to play -- today's pick
-    from the lectures most clips were cut from, or ?v=<id> -- with the verses
-    and hadith he cites in it as chapters under the player and an 'Up next'
-    rail; then filter chips (?era, ?sort=clips, ?dur=short, ?q) and a grid of
-    thumbnail cards paged 48 at a time (?offset). Counts are live from roman.db,
-    clips.db and refs.db."""
-    if not db.exists():
-        return render_template("videos.html", videos=None, no_store=True)
-    a = request.args
-    q = (a.get("q") or "").strip()
-    era = (a.get("era") or "").strip()
-    sort = (a.get("sort") or "").strip()
-    dur = (a.get("dur") or "").strip()
-    v_sel = a.get("v", type=int)
-    offset = max(0, a.get("offset", type=int) or 0)
+# The lecture list is counted across every one of the ~650,000 transcript
+# segments: close to half a second of database work, repeated on every visit,
+# for numbers that only change when a transcript finishes. Keep the last answer
+# and reuse it until one of the databases is actually written to. While a
+# transcription run is writing constantly, refresh at most every _LIB_MIN_AGE
+# seconds, so a busy worker cannot drag the page back down to half a second.
+_LIB_CACHE = {"key": None, "at": 0.0, "val": None}
+_LIB_MIN_AGE = 30.0
+
+
+def _db_key(*paths):
+    """A fingerprint that changes exactly when one of these files is written."""
+    out = []
+    for path in paths:
+        try:
+            st = os.stat(path)
+            out.append((st.st_mtime_ns, st.st_size))
+        except OSError:
+            out.append(None)
+    return tuple(out)
+
+
+def _library_counts():
+    """Per-lecture segment, clip and reference counts. Cached; see _LIB_CACHE."""
+    key = _db_key(config.DB_PATH, CLIP_STUDY_CLIPS, CLIP_STUDY_REFS)
+    now = time.time()
+    cache = _LIB_CACHE
+    if cache["val"] is not None and (cache["key"] == key or now - cache["at"] < _LIB_MIN_AGE):
+        return cache["val"]
     conn = db.connect_ro()
     try:
         rows = conn.execute(
@@ -342,6 +364,29 @@ def videos():
         d.close()
     except Exception:  # noqa: BLE001
         pass
+    val = (rows, clips_by_ann, refs_by_yid)
+    cache.update(key=key, at=now, val=val)
+    return val
+
+
+@app.route("/videos")
+def videos():
+    """Watch & Read: the page opens on a lecture ready to play -- today's pick
+    from the lectures most clips were cut from, or ?v=<id> -- with the verses
+    and hadith he cites in it as chapters under the player and an 'Up next'
+    rail; then filter chips (?era, ?sort=clips, ?dur=short, ?q) and a grid of
+    thumbnail cards paged 48 at a time (?offset). Counts are live from roman.db,
+    clips.db and refs.db."""
+    if not db.exists():
+        return render_template("videos.html", videos=None, no_store=True)
+    a = request.args
+    q = (a.get("q") or "").strip()
+    era = (a.get("era") or "").strip()
+    sort = (a.get("sort") or "").strip()
+    dur = (a.get("dur") or "").strip()
+    v_sel = a.get("v", type=int)
+    offset = max(0, a.get("offset", type=int) or 0)
+    rows, clips_by_ann, refs_by_yid = _library_counts()
 
     def _clean(t):
         t = (t or "").strip()
