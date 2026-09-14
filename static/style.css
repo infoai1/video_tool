@@ -806,12 +806,12 @@ pre { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; 
 
 /* --- the home page: C3b. Portrait behind (desktop), card with search, three answers, life areas --- */
 body.landing-page main.landing { max-width: 1240px; padding-top: 0; padding-bottom: 0; min-height: 0; }
-.c3-card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); padding: 16px 14px 4px; margin: 14px 0 8px; }
+.c3-card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); padding: 20px 18px 16px; margin: 14px 0 8px; }
 .c3-port { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; object-fit: cover; object-position: 50% 20%; border-radius: 14px; margin-bottom: 14px; background: #0b0d0d; }
-.c3-big { font-size: clamp(2.3rem, 4.6vw, 3.6rem); line-height: .95; letter-spacing: -.02em; font-weight: 800; text-transform: uppercase; font-stretch: condensed; margin: 0 0 12px; text-wrap: balance; color: var(--fg); }
-.c3-sub { font-family: Georgia, "Times New Roman", serif; font-weight: 400; font-size: clamp(1.05rem, 1.6vw, 1.2rem); line-height: 1.35; margin: 0 0 6px; color: var(--fg); }
+.c3-big { font-size: clamp(2.3rem, 4.6vw, 3.6rem); line-height: .95; letter-spacing: -.02em; font-weight: 800; text-transform: uppercase; font-stretch: condensed; margin: 0 0 10px; text-wrap: balance; color: var(--fg); }
+.c3-sub { font-family: Georgia, "Times New Roman", serif; font-weight: 400; font-size: clamp(1.05rem, 1.6vw, 1.2rem); line-height: 1.4; margin: 0 0 12px; color: var(--fg); text-wrap: balance; }
 .c3-sub em { font-style: italic; color: var(--accent); }
-.c3-expl { color: var(--muted); font-size: .92rem; line-height: 1.45; margin: 0 0 14px; }
+.c3-expl { color: var(--muted); font-size: .92rem; line-height: 1.5; margin: 0 0 20px; }
 .c3-srch { display: flex; align-items: center; gap: 4px; background: var(--card); border: 1px solid var(--line); border-radius: 999px; box-shadow: var(--shadow); padding: 5px; }
 .c3-srch input { flex: 1; min-width: 0; height: 48px; padding: 0 0 0 18px; border: 0; background: transparent; color: var(--fg); font: inherit; font-size: 16px; -webkit-appearance: none; }
 .c3-srch input::placeholder { color: var(--muted); }
@@ -820,12 +820,12 @@ body.landing-page main.landing { max-width: 1240px; padding-top: 0; padding-bott
 .c3-srch .sh-voice button.sh-mic { border: 0; background: transparent; border-radius: 999px; width: 48px; height: 48px; }
 .c3-srch .go { flex: none; width: 48px; height: 48px; border: 0; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0; }
 .c3-srch .go svg { width: 22px; height: 22px; }
-.c3-al { list-style: none; margin: 18px 0 6px; padding: 0; border-top: 1px solid var(--line); }
+.c3-al { list-style: none; margin: 20px 0 4px; padding: 0; border-top: 1px solid var(--line); }
 .c3-al li { border-bottom: 1px solid var(--line); }
 .c3-al li:last-child { border-bottom: 0; }
-.qrow { display: grid; grid-template-columns: auto 1fr auto; gap: 14px; align-items: center; width: 100%; min-height: 64px; padding: 14px 0; border: 0; background: none; color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
+.qrow { display: grid; grid-template-columns: auto 1fr auto; gap: 16px; align-items: center; width: 100%; min-height: 64px; padding: 16px 0; border: 0; background: none; color: var(--fg); font: inherit; text-align: left; cursor: pointer; }
 .qrow .ts { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .82rem; font-weight: 600; color: var(--accent); min-width: 3.4rem; }
-.c3-q b { display: block; font-size: 1rem; line-height: 1.3; }
+.c3-q b { display: block; font-size: 1rem; line-height: 1.3; margin-bottom: 3px; }
 .c3-q span { color: var(--muted); font-size: .84rem; }
 .qrow .pl { width: 44px; height: 44px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--accent-soft); color: var(--accent); transition: transform .16s cubic-bezier(.23,1,.32,1); }
 .qrow .pl svg { width: 22px; height: 22px; margin-left: 2px; }
@@ -834,15 +834,15 @@ body.landing-page main.landing { max-width: 1240px; padding-top: 0; padding-bott
 .c3-play { padding: 0 0 12px; }
 .c3-play iframe { display: block; width: 100%; aspect-ratio: 16 / 9; border: 0; border-radius: 10px; background: #000; }
 .c3-play a { display: inline-flex; align-items: center; min-height: 44px; color: var(--accent); font-weight: 600; text-decoration: none; }
-.c3-gl { display: flex; flex-wrap: wrap; justify-content: center; gap: 0 4px; margin: 6px 0 0; }
+.c3-gl { display: flex; flex-wrap: wrap; justify-content: center; gap: 2px 6px; margin: 14px 0 2px; }
 .c3-gl a { display: inline-flex; align-items: center; min-height: 44px; padding: 0 8px; color: var(--fg); font-size: 1rem; text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--fg) 35%, transparent); text-underline-offset: 5px; }
 .c3-gl a:hover { color: var(--accent); }
 /* desktop: dark full-bleed hero, the portrait right, a scrim that fades out before his face, the card left */
 @media (min-width: 1024px) {
-  .c3 { position: relative; isolation: isolate; margin: 0 calc(50% - 50vw); padding: 48px max(20px, calc(50vw - 600px)) 40px; background: #0b0d0d; }
+  .c3 { position: relative; isolation: isolate; margin: 0 calc(50% - 50vw); padding: 56px max(20px, calc(50vw - 600px)) 56px; background: #0b0d0d; }
   .c3-port { position: absolute; top: 0; bottom: 0; right: 0; left: auto; z-index: -2; width: 58%; height: 100%; aspect-ratio: auto; margin: 0; border-radius: 0; object-position: 50% 12%; }
   .c3::after { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
     background: linear-gradient(90deg, rgba(8,10,10,1) 0%, rgba(8,10,10,.95) 44%, rgba(8,10,10,.35) 56%, rgba(8,10,10,.08) 66%, rgba(8,10,10,0) 100%); }
-  .c3-card { width: 55%; max-width: 640px; margin: 0; padding: 22px 22px 8px; border-radius: 20px; border-color: transparent; }
+  .c3-card { width: 55%; max-width: 640px; margin: 0; padding: 28px 28px 24px; border-radius: 20px; border-color: transparent; }
 }
 @media (max-width: 760px) { body.landing-page main.landing { padding-left: .9rem; padding-right: .9rem; } .c3-card { margin-top: 10px; } }
