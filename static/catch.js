@@ -126,7 +126,7 @@
     order = td.concat(pairs, rest);   // today's question leads
     var still = document.getElementById('catch-still');
     /* phones (no full-height field any more) and reduced-motion: a static list */
-    if (still && window.matchMedia && (window.innerWidth < 761 || matchMedia('(prefers-reduced-motion: reduce)').matches)) {
+    if (still && window.matchMedia && (window.innerWidth < 1024 || matchMedia('(prefers-reduced-motion: reduce)').matches)) {
       still.innerHTML = '<span>People asked</span>' + order.slice(0, 6).map(function (i) { return '<a href="' + esc(href(P[i])) + '">' + esc(P[i].t) + '</a>'; }).join('');
       still.hidden = false; inp.placeholder = P[order[0]].q || P[order[0]].t;
       return;
