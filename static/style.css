@@ -740,7 +740,7 @@ pre { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; 
   /* ---- landing: tiles first, search second, hero copy last ---------------- */
   main { padding: .75rem .9rem 3rem; }
   main.landing { display: flex; flex-direction: column; }
-  main.landing .hero { order: 1; padding: .35rem 0 .6rem; text-align: left; }
+  main.landing .hero { order: 0; padding: .35rem 0 .6rem; text-align: left; }
   main.landing .sec-tiles { order: 2; margin: .25rem -.9rem .5rem; }
   .hero .eyebrow { display: none; }  /* the top bar already names him */
   .hero-title { font-size: 1.45rem; margin: 0 0 .35rem; }
@@ -870,21 +870,19 @@ main.landing { padding-top: 0; }   /* the field meets the top bar */
 .thought.typing { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft), var(--tglow); }
 @keyframes catch-rise { 0% { translate: 0 0; opacity: 0; } 7% { opacity: 1; } 88% { opacity: 1; } 100% { translate: 0 calc(-1 * var(--h)); opacity: 0; } }
 @keyframes catch-catch { to { transform: translateY(-40px) scale(.7); opacity: 0; } }
-/* the landing page is the field alone: no footer under it, and the page ground matches the field's foot */
-body.landing-page .sh-foot { display: none; }
+/* the landing page: the field on top, then Start here, the life areas, the section tiles, the footer */
 /* the field fills exactly what is left under the top bar (and above the tab bar), whatever their height */
 body.landing-page { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; }
 body.landing-page main.landing { flex: 1 1 auto; display: flex; flex-direction: column; width: 100%; padding-bottom: 0; }
-body.landing-page main.landing .hero.catch { flex: 1 1 auto; min-height: 0; margin-bottom: 0; }
-body.landing-page { background: #cbd7d0; }
-@media (prefers-color-scheme: dark) { :root:not([data-theme=light]) body.landing-page { background: #0d1210; } }
-:root[data-theme=dark] body.landing-page { background: #0d1210; }
+body.landing-page main.landing .hero.catch { flex: none; min-height: 0; margin-bottom: 0; }
+body.landing-page { background: var(--bg); }
+body.landing-page main.landing { max-width: 1080px; padding-bottom: 1.5rem; }
 /* full width from tablet up, so the thoughts have room */
 @media (min-width: 761px) { .hero.catch { margin-left: calc(50% - 50vw); margin-right: calc(50% - 50vw); width: 100vw; } }
 /* wide screens: the field fills the screen, the box in the middle of the drift */
 @media (min-width: 1024px) {
   main.landing { padding-bottom: 0; }
-  .hero.catch { min-height: calc(100vh - var(--sh-top-h, 58px)); }
+  .hero.catch, body.landing-page main.landing .hero.catch { min-height: calc(100vh - var(--sh-top-h, 58px)); }
 }
 /* phones and tablets: the field fills the screen, the box centred in it.
    (It used to sit at the foot like a chat box; testers read that as
@@ -907,3 +905,56 @@ body.landing-page { background: #cbd7d0; }
 }
 }
 }
+
+/* --- landing, under the hero: Start here / life areas / section tiles ---- */
+.hero-hint { margin: 8px 0 0; font-size: 13px; line-height: 1.4; color: var(--muted); }
+.ld-sec { padding: 26px 0 4px; }
+.ld-sec-h { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 0 0 12px; }
+.ld-sec-h h2 { margin: 0; font-size: 1.05rem; font-weight: 700; letter-spacing: -.01em; }
+.ld-sec-h .k { margin-left: .5rem; color: var(--muted); font-weight: 500; font-size: .85rem; }
+.ld-sec-h > a { display: inline-flex; align-items: center; min-height: 44px; flex: none; white-space: nowrap;
+  color: var(--accent); font-weight: 600; font-size: .9rem; text-decoration: none; }
+.ld-sec-h > a:hover { text-decoration: underline; }
+.ld-start { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.ld-card { display: flex; flex-direction: column; overflow: hidden; background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--radius); box-shadow: var(--shadow); }
+/* the cover: same dark-on-image treatment as the clips app (semantic_demo.py .thumb::before / .cvt / .cvd) */
+.ld-th { position: relative; display: block; width: 100%; aspect-ratio: 16 / 9; padding: 0; border: 0; overflow: hidden;
+  background: var(--line); cursor: pointer; color: #fff; font: inherit; }
+.ld-th img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.ld-th::before { content: ""; position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  background: linear-gradient(to top, rgba(0,0,0,.72), rgba(0,0,0,.2) 45%, rgba(0,0,0,0) 70%); }
+.ld-th .svg { position: absolute; z-index: 2; left: 50%; top: 50%; width: 34px; height: 34px; transform: translate(-50%, -50%);
+  filter: drop-shadow(0 2px 6px rgba(0,0,0,.6)); opacity: .92; }
+.ld-th .cvt { position: absolute; right: 6px; bottom: 6px; z-index: 2; background: rgba(0,0,0,.72); color: #fff; font-size: 11px;
+  font-weight: 600; line-height: 1; padding: 4px 6px; border-radius: 5px; font-variant-numeric: tabular-nums; letter-spacing: .01em; }
+.ld-th .cvd { position: absolute; left: 7px; top: 7px; z-index: 2; width: 8px; height: 8px; border-radius: 50%; background: #57d6b4;
+  box-shadow: 0 0 0 1.5px rgba(0,0,0,.35); }
+.ld-card.playing .ld-th { cursor: default; }
+.ld-card.playing .ld-th::before { display: none; }
+.ld-th iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.ld-q { padding: 12px 14px 12px; }
+.ld-q h3 { margin: 0; font-size: .98rem; font-weight: 600; line-height: 1.35; }
+.ld-q p { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 2px 0 0; font-size: .82rem; color: var(--muted); }
+.ld-who { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ld-full { display: inline-flex; align-items: center; min-height: 44px; flex: none; color: var(--accent); font-weight: 600; text-decoration: none; }
+.ld-full:hover { text-decoration: underline; }
+.ld-areas { display: flex; flex-wrap: wrap; gap: 8px; }
+.ld-chip { display: inline-flex; align-items: center; min-height: 44px; padding: 0 16px; border: 1px solid var(--line); border-radius: 999px;
+  background: var(--card); color: var(--fg); text-decoration: none; font-size: .95rem; font-weight: 500; }
+.ld-chip:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); text-decoration: none; }
+.ld-tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.ld-tile { display: flex; flex-direction: column; gap: 4px; min-height: 44px; padding: 16px; background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--radius); color: var(--fg); text-decoration: none; }
+.ld-tile:hover { border-color: var(--accent); text-decoration: none; }
+.ld-tile b { font-size: 1rem; }
+.ld-tile span { color: var(--muted); font-size: .88rem; line-height: 1.4; }
+.ld-tile i { margin-top: auto; padding-top: 6px; font-style: normal; color: var(--accent); font-weight: 600; font-size: .82rem; }
+@media (max-width: 760px) {
+  .ld-start { grid-template-columns: 1fr; gap: 10px; }
+  .ld-q { padding: 10px 12px 8px; }
+  .ld-q h3 { font-size: .95rem; }
+  .ld-tiles { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .ld-tile { padding: 14px 12px; }
+}
+

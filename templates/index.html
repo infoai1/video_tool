@@ -13,6 +13,7 @@
       <button type="submit" class="go" aria-label="Search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></button>
       <a class="hero-alt" href="/situations">Situations <span aria-hidden="true">&rarr;</span></a>
     </form>
+    <p class="hero-hint">Ask in English, Urdu or Roman Urdu.</p>
     <p class="catch-still" id="catch-still" hidden></p>
   </div>
   </div>
@@ -29,6 +30,63 @@
  {"q":"Where do I even start to become wise?","t":"Where to begin to become wise","a":"Usman","c":"Ahmedabad","y":2016,"s":"2:17","id":3000}
 ]</script>
 <script src="{{ url_for('static', filename='catch.js') }}" defer></script>
+
+{% if landing.start %}
+<section class="ld-sec" aria-labelledby="ld-start-h">
+  <div class="ld-sec-h"><h2 id="ld-start-h">Start here <span class="k">answers people return to</span></h2><a href="/clips/qa">All Q&amp;A &rarr;</a></div>
+  <div class="ld-start" id="ld-start">
+  {% for u in landing.start %}
+    <article class="ld-card" data-yid="{{ u.yid }}" data-start="{{ u.start }}" data-end="{{ u.end }}">
+      <button type="button" class="thumb ld-th" aria-label="Play: {{ u.title|e }}">
+        <img src="{{ u.thumb }}" alt="" loading="eager" width="480" height="360">
+        <svg class="svg" viewBox="0 0 24 24" fill="#fff" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+        <i class="cvd"></i><b class="cvt">{{ u.dur }}</b>
+      </button>
+      <div class="ld-q"><h3>{{ u.title }}</h3>
+        <p><span class="ld-who">{% if u.asker %}Asked by {{ u.asker }}{% if u.city %}, {{ u.city }}{% endif %}{% endif %}</span>
+        <a class="ld-full" href="/asked?q={{ u.title|urlencode }}&amp;play={{ u.id }}">Full answer &rarr;</a></p>
+      </div>
+    </article>
+  {% endfor %}
+  </div>
+</section>
+<script>
+(function () {
+  /* one player at a time: a tap swaps the thumbnail for a YouTube iframe
+     cued at the answer; a tap on another card puts the first thumbnail back */
+  var on = null;
+  document.getElementById('ld-start').addEventListener('click', function (e) {
+    var b = e.target.closest('.ld-th'); if (!b) return;
+    var c = b.closest('.ld-card');
+    if (on && on !== c) { var ob = on.querySelector('.ld-th'); ob.innerHTML = ob.dataset.html; on.classList.remove('playing'); }
+    if (!b.dataset.html) b.dataset.html = b.innerHTML;
+    b.innerHTML = '<iframe src="https://www.youtube.com/embed/' + c.dataset.yid + '?start=' + c.dataset.start + '&end=' + c.dataset.end +
+      '&autoplay=1&playsinline=1&rel=0&modestbranding=1" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen title="' + (c.querySelector('h3').textContent.replace(/"/g, '')) + '"></iframe>';
+    c.classList.add('playing'); on = c;
+  });
+})();
+</script>
+{% endif %}
+
+<section class="ld-sec" aria-labelledby="ld-sit-h">
+  <div class="ld-sec-h"><h2 id="ld-sit-h">Or start from a situation</h2><a href="/situations">All {{ landing.counts.situations }} &rarr;</a></div>
+  <div class="ld-areas">
+    <a class="ld-chip" href="/situations#gw-feel">How I feel</a>
+    <a class="ld-chip" href="/situations#gw-people">People around me</a>
+    <a class="ld-chip" href="/situations#gw-life">My life</a>
+    <a class="ld-chip" href="/situations#gw-world">The world around me</a>
+    <a class="ld-chip" href="/situations#gw-faith">My faith</a>
+  </div>
+</section>
+
+<section class="ld-sec" aria-label="Sections of the site">
+  <div class="ld-tiles">
+    <a class="ld-tile" href="/situations"><b>Guidance</b><span>Start from what you are going through, not from a keyword.</span><i>{{ landing.counts.situations }} life situations &rarr;</i></a>
+    <a class="ld-tile" href="/clips/qa"><b>Q&amp;A</b><span>Questions people asked him, answered in his own voice.</span><i>{{ "{:,}".format(landing.counts.qa) }} answers &rarr;</i></a>
+    <a class="ld-tile" href="/clips"><b>Clips</b><span>One thought at a time, a minute or two each.</span><i>{{ "{:,}".format(landing.counts.clips) }} moments &rarr;</i></a>
+    <a class="ld-tile" href="/refs"><b>References</b><span>Every verse and hadith, with the lecture he cited it in.</span><i>Quran &amp; hadith he cites &rarr;</i></a>
+  </div>
+</section>
 
 
 {% else %}{# a query is present, or the store is missing — show compact search + results #}

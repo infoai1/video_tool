@@ -36,6 +36,7 @@ try:
     import situations as _situations
 except Exception:  # noqa: BLE001 -- ships with the clips app; the page works without it
     _situations = None
+import start_here
 try:
     import shell as _shell
 except Exception:  # noqa: BLE001 - a missing shell must not take the site down
@@ -222,11 +223,29 @@ def _landing_context_uncached():
         saved = conn.execute("SELECT COUNT(*) FROM bookmarks").fetchone()[0]
     finally:
         conn.close()
+    try:
+        start = start_here.pick()
+    except Exception:  # noqa: BLE001 -- the hero must never depend on the cards
+        start = []
     return {
         "videos": videos, "romanized_pct": pct, "saved": saved,
         "playlists": tags, "recent": recent, "topics": _SUGGESTED_TOPICS,
         "situations": _situations.featured() if _situations else [],
+        "start": start, "counts": _section_counts(),
     }
+
+
+_COUNTS_CACHE = {"at": 0.0, "val": None}
+
+
+def _section_counts():
+    """Numbers on the landing page's section tiles, refreshed once a day."""
+    now = datetime.datetime.now().timestamp()
+    if _COUNTS_CACHE["val"] is None or now - _COUNTS_CACHE["at"] > 86400:
+        c = start_here.counts()
+        c["situations"] = len(_situations.SITUATIONS) if _situations else 0
+        _COUNTS_CACHE.update(at=now, val=c)
+    return _COUNTS_CACHE["val"]
 
 
 @app.route("/privacy")
