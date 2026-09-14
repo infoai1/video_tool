@@ -107,7 +107,7 @@ main.vwmain{max-width:none;padding:0}
   <aside class="vw-rail"><h4>Up next <a href="/videos?sort=clips">Most clipped &rarr;</a></h4>
     <div class="vw-ups">
     {% for v in upnext %}
-    <a class="vw-up" href="/videos?v={{ v.id }}"><span class="th">{% if v.yt %}<img loading="lazy" src="https://i.ytimg.com/vi/{{ v.yt }}/mqdefault.jpg" alt="">{% endif %}{% if v.dur %}<span class="d">{{ v.dur }}</span>{% endif %}</span>
+    <a class="vw-up" href="/videos?v={{ v.id }}"><span class="th">{% if v.yt %}<img loading="lazy" src="https://i.ytimg.com/vi/{{ v.yt }}/hqdefault.jpg" alt="">{% endif %}{% if v.dur %}<span class="d">{{ v.dur }}</span>{% endif %}</span>
       <span><span class="t">{{ v.title }}</span><span class="m">{% if v.year %}{{ v.year }} · {% endif %}{{ v.clips }} clips{% if v.refs %} · {{ v.refs }} refs{% endif %}</span></span></a>
     {% endfor %}
     </div>
@@ -129,7 +129,7 @@ main.vwmain{max-width:none;padding:0}
 <div class="vw-grid">
 {% for v in items %}
 <a class="vw-card" href="/videos?v={{ v.id }}">
-  <span class="th">{% if v.yt %}<img loading="{{ 'eager' if loop.index <= 8 else 'lazy' }}" src="https://i.ytimg.com/vi/{{ v.yt }}/mqdefault.jpg" alt="">{% endif %}<span class="pl">{{ play|safe }}</span>{% if v.dur %}<span class="d">{{ v.dur }}</span>{% endif %}</span>
+  <span class="th">{% if v.yt %}<img loading="{{ 'eager' if loop.index <= 8 else 'lazy' }}" src="https://i.ytimg.com/vi/{{ v.yt }}/hqdefault.jpg" alt="">{% endif %}<span class="pl">{{ play|safe }}</span>{% if v.dur %}<span class="d">{{ v.dur }}</span>{% endif %}</span>
   <span class="t">{{ v.title }}</span>
   <span class="m">{% if v.year %}{{ v.year }}{% endif %}{% if v.refs %} · {{ v.refs }} refs{% endif %}{% if v.clips %} · {{ v.clips }} clips{% endif %}</span>
 </a>
