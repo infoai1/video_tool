@@ -3,92 +3,50 @@
 {% block main_class %}{{ "landing" if landing }}{% endblock %}
 {% block content %}
 {% if landing %}
-<section class="hero catch" id="catch">
-  <div class="catch-field" id="catch-field" aria-hidden="true"></div>
-  <div class="catch-box">
-    <h1 class="hero-title">What are you going through?</h1>
-    <p class="hero-sub">Type it in your own words. Maulana Wahiduddin Khan answered thousands of such questions in his lectures. We play his answer at the exact moment.</p>
-    <form class="search hero-search" id="q" method="get" action="{{ url_for('index') }}">
-      <input type="search" name="q" id="catch-q" value="" placeholder="Ask a question or search a word" autocomplete="off">
+<section class="c3">
+  <div class="c3-card">
+    <img class="c3-port" src="{{ url_for('static', filename='maulana-1280.webp') }}" srcset="{{ url_for('static', filename='maulana-800.webp') }} 800w, {{ url_for('static', filename='maulana-1280.webp') }} 1280w" sizes="(min-width:1024px) 58vw, 100vw" width="1280" height="720" alt="" fetchpriority="high">
+    <h1 class="c3-big">What are you going through?</h1>
+    <p class="c3-sub">Maulana Wahiduddin Khan answered thousands of life questions. <em>Ask yours.</em></p>
+    <p class="c3-expl">A search engine over his 2,242 lectures. The video opens at the exact moment he answers.</p>
+    <form class="c3-srch" id="q" method="get" action="{{ url_for('index') }}" role="search">
+      <input type="search" name="q" value="" placeholder="I feel alone, I cannot forgive..." aria-label="Search his answers" autocomplete="off">
       <button type="submit" class="go" aria-label="Search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></button>
-      <a class="hero-alt" href="/situations">Situations <span aria-hidden="true">&rarr;</span></a>
     </form>
-    <p class="hero-hint">Ask in English, Urdu or Roman Urdu.</p>
-    <p class="catch-still" id="catch-still" hidden></p>
-  </div>
-  </div>
-
-</section>
-<script type="application/json" id="catch-fallback">[
- {"q":"I lose my temper with my family","t":"Dealing with Family Discord and Anger","a":"Nazneen","c":"Delhi","y":2012,"s":"2:18","id":153},
- {"q":"I know God has a plan, but I still feel frustrated","t":"Overcoming Frustration Despite Knowing God's Plan","a":"Naghma","c":"Delhi","y":2015,"s":"1:49","id":3230},
- {"q":"Is it wrong to get angry?","t":"Is anger a positive quality?","a":"Javed","c":"Ahmedabad","y":2020,"s":"2:19","id":1890},
- {"q":"Will God forgive what I did years ago?","t":"Will past sins be forgiven after sincere repentance?","a":"Razia","c":"","y":2013,"s":"3:34","id":199},
- {"q":"My work leaves no time for God","t":"Focusing on God amidst worldly duties","a":"Farida","c":"Delhi","y":2010,"s":"1:26","id":1116},
- {"q":"My son and I cannot talk without a fight","t":"Managing generation gap with parents","a":"Sahil","c":"Bangalore","y":2012,"s":"1:03","id":1037},
- {"q":"What is spirituality, really?","t":"What is spirituality and how to nurture it?","a":"Asim","c":"Kashmir","y":2021,"s":"5:47","id":1476},
- {"q":"Where do I even start to become wise?","t":"Where to begin to become wise","a":"Usman","c":"Ahmedabad","y":2016,"s":"2:17","id":3000}
-]</script>
-<script src="{{ url_for('static', filename='catch.js') }}" defer></script>
-
-{% if landing.start %}
-<section class="ld-sec" aria-labelledby="ld-start-h">
-  <div class="ld-sec-h"><h2 id="ld-start-h">Start here <span class="k">answers people return to</span></h2><a href="/clips/qa">All Q&amp;A &rarr;</a></div>
-  <div class="ld-start" id="ld-start">
-  {% for u in landing.start %}
-    <article class="ld-card" data-yid="{{ u.yid }}" data-start="{{ u.start }}" data-end="{{ u.end }}">
-      <button type="button" class="thumb ld-th" aria-label="Play: {{ u.title|e }}">
-        <img src="{{ u.thumb }}" alt="" loading="eager" width="480" height="360">
-        <svg class="svg" viewBox="0 0 24 24" fill="#fff" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
-        <i class="cvd"></i><b class="cvt">{{ u.dur }}</b>
-      </button>
-      <div class="ld-q"><h3>{{ u.title }}</h3>
-        <p><span class="ld-who">{% if u.asker %}Asked by {{ u.asker }}{% if u.city %}, {{ u.city }}{% endif %}{% endif %}</span>
-        <a class="ld-full" href="/asked?q={{ u.title|urlencode }}&amp;play={{ u.id }}">Full answer &rarr;</a></p>
-      </div>
-    </article>
-  {% endfor %}
+    {% if landing.start %}
+    <ul class="c3-al" id="c3-al">
+    {% for u in landing.start %}
+      <li data-kind="qa" data-title="{{ u.title }}" data-yid="{{ u.yid }}" data-start="{{ u.start }}" data-end="{{ u.end }}">
+        <button type="button" class="qrow" aria-expanded="false">
+          <span class="ts">{{ u.dur }}</span>
+          <span class="c3-q"><b>{{ u.title }}</b>{% set who = [u.asker ~ (', ' ~ u.city if u.city else ''), u.year]|select|join(' · ') %}{% if who %}<span><bdi>{{ who }}</bdi></span>{% endif %}</span>
+          <span class="pl" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span>
+        </button>
+        <div class="c3-play" hidden><a href="/asked?q={{ u.title|urlencode }}&amp;play={{ u.id }}">Full answer &rarr;</a></div>
+      </li>
+    {% endfor %}
+    </ul>
+    <script>
+    (function () {  /* one player at a time; a tap on another row replaces it */
+      var on = null;
+      document.getElementById('c3-al').addEventListener('click', function (e) {
+        var b = e.target.closest('.qrow'); if (!b) return;
+        var li = b.parentNode, box = li.querySelector('.c3-play'), d = li.dataset;
+        if (on === li) return;
+        if (on) { var o = on.querySelector('.c3-play'); o.hidden = true; o.querySelector('iframe').remove(); on.querySelector('.qrow').setAttribute('aria-expanded', 'false'); }
+        box.insertAdjacentHTML('afterbegin', '<iframe src="https://www.youtube.com/embed/' + d.yid + '?start=' + d.start + '&end=' + d.end +
+          '&autoplay=1&playsinline=1&rel=0" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen title=""></iframe>');
+        box.querySelector('iframe').title = d.title;
+        box.hidden = false; b.setAttribute('aria-expanded', 'true'); on = li;
+      });
+    })();
+    </script>
+    {% endif %}
+    <nav class="c3-gl" aria-label="Life areas">
+      <a href="/situations#gw-feel">How I feel</a><a href="/situations#gw-people">People around me</a><a href="/situations#gw-life">My life</a><a href="/situations#gw-world">The world around me</a><a href="/situations#gw-faith">My faith</a>
+    </nav>
   </div>
 </section>
-<script>
-(function () {
-  /* one player at a time: a tap swaps the thumbnail for a YouTube iframe
-     cued at the answer; a tap on another card puts the first thumbnail back */
-  var on = null;
-  document.getElementById('ld-start').addEventListener('click', function (e) {
-    var b = e.target.closest('.ld-th'); if (!b) return;
-    var c = b.closest('.ld-card');
-    if (on && on !== c) { var ob = on.querySelector('.ld-th'); ob.innerHTML = ob.dataset.html; on.classList.remove('playing'); }
-    if (!b.dataset.html) b.dataset.html = b.innerHTML;
-    b.innerHTML = '<iframe src="https://www.youtube.com/embed/' + c.dataset.yid + '?start=' + c.dataset.start + '&end=' + c.dataset.end +
-      '&autoplay=1&playsinline=1&rel=0&modestbranding=1" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen title="' + (c.querySelector('h3').textContent.replace(/"/g, '')) + '"></iframe>';
-    c.classList.add('playing'); on = c;
-  });
-})();
-</script>
-{% endif %}
-
-<section class="ld-sec" aria-labelledby="ld-sit-h">
-  <div class="ld-sec-h"><h2 id="ld-sit-h">Or start from a situation</h2><a href="/situations">All {{ landing.counts.situations }} &rarr;</a></div>
-  <div class="ld-areas">
-    <a class="ld-chip" href="/situations#gw-feel">How I feel</a>
-    <a class="ld-chip" href="/situations#gw-people">People around me</a>
-    <a class="ld-chip" href="/situations#gw-life">My life</a>
-    <a class="ld-chip" href="/situations#gw-world">The world around me</a>
-    <a class="ld-chip" href="/situations#gw-faith">My faith</a>
-  </div>
-</section>
-
-<section class="ld-sec" aria-label="Sections of the site">
-  <div class="ld-tiles">
-    <a class="ld-tile" href="/situations"><b>Guidance</b><span>Start from what you are going through, not from a keyword.</span><i>{{ landing.counts.situations }} life situations &rarr;</i></a>
-    <a class="ld-tile" href="/clips/qa"><b>Q&amp;A</b><span>Questions people asked him, answered in his own voice.</span><i>{{ "{:,}".format(landing.counts.qa) }} answers &rarr;</i></a>
-    <a class="ld-tile" href="/clips"><b>Clips</b><span>One thought at a time, a minute or two each.</span><i>{{ "{:,}".format(landing.counts.clips) }} moments &rarr;</i></a>
-    <a class="ld-tile" href="/refs"><b>References</b><span>Every verse and hadith, with the lecture he cited it in.</span><i>Quran &amp; hadith he cites &rarr;</i></a>
-  </div>
-</section>
-
-
 {% else %}{# a query is present, or the store is missing — show compact search + results #}
 <form class="search" method="get" action="{{ url_for('index') }}">
   <input type="search" name="q" value="{{ q|e }}" autocomplete="off" placeholder="Exact word in Roman Urdu — or paste a YouTube link"{% if not q %} autofocus{% endif %}>

@@ -221,12 +221,15 @@ def _landing_context_uncached():
         tags = library.all_tags(conn)[:12]
         recent = library.list_romanized(conn, limit=6)
         saved = conn.execute("SELECT COUNT(*) FROM bookmarks").fetchone()[0]
+        try:
+            start = [dict(u) for u in start_here.pick()]
+            for u in start:  # the year he answered, shown on the landing rows when known
+                r = conn.execute("SELECT year FROM videos WHERE youtube_url LIKE ? LIMIT 1", ("%" + u["yid"] + "%",)).fetchone()
+                u["year"] = r[0] if r and r[0] else ""
+        except Exception:  # noqa: BLE001 -- the hero must never depend on the cards
+            start = []
     finally:
         conn.close()
-    try:
-        start = start_here.pick()
-    except Exception:  # noqa: BLE001 -- the hero must never depend on the cards
-        start = []
     return {
         "videos": videos, "romanized_pct": pct, "saved": saved,
         "playlists": tags, "recent": recent, "topics": _SUGGESTED_TOPICS,
