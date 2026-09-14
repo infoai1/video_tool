@@ -13,8 +13,20 @@
   --shadow: 0 1px 2px rgba(20, 19, 15, .04), 0 6px 20px rgba(20, 19, 15, .05);
   --mark: rgba(12, 107, 87, .20);
 }
-@media (prefers-color-scheme: dark) {
-  :root {
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){
+    --bg: #14130e;
+    --panel: #1b1a13;
+    --card: #1e1c15;
+    --fg: #ece9e1;
+    --muted: #a29e93;
+    --faint: #757166;
+    --accent: #57d6b4;
+    --accent-ink: #06231c;
+    --accent-soft: rgba(87, 214, 180, .12);
+    --line: #2c2a22;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px rgba(0, 0, 0, .28);
+    --mark: rgba(87, 214, 180, .26);
+  }}:root[data-theme=dark]{
     --bg: #14130e;
     --panel: #1b1a13;
     --card: #1e1c15;
@@ -28,7 +40,6 @@
     --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px rgba(0, 0, 0, .28);
     --mark: rgba(87, 214, 180, .26);
   }
-}
 
 * { box-sizing: border-box; }
 /* the `hidden` attribute must always win over component display rules
@@ -100,6 +111,8 @@ h2 { margin-top: 2rem; font-size: 1.15rem; letter-spacing: -0.01em; }
   padding: .3rem .7rem; border-radius: 999px; font-size: .88rem; transition: all .12s;
 }
 .topic:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.topic-more { color: var(--accent); font-weight: 600; border-color: transparent; background: transparent; }
+.st-row .tr-lbl { white-space: nowrap; flex: none; }
 .hero-stats { display: flex; align-items: center; justify-content: center; gap: .55rem; color: var(--muted); font-size: .9rem; flex-wrap: wrap; }
 .hero-stats strong { color: var(--fg); font-weight: 700; }
 .hero-stats .dot { color: var(--faint); }
@@ -175,13 +188,16 @@ h2 { margin-top: 2rem; font-size: 1.15rem; letter-spacing: -0.01em; }
 /* search box */
 .search { display: flex; gap: .55rem; margin: 1.25rem 0 1rem; }
 .search input[type=search] {
-  flex: 1; padding: .8rem 1rem; font-size: 1.02rem;
+  /* min-width:0 is required: a flex item defaults to min-width:auto and an
+     <input> has an intrinsic size, so without this it refuses to shrink and
+     pushes the Search button off-screen on ~360px phones. */
+  flex: 1 1 0; min-width: 0; padding: .8rem 1rem; font-size: 1.02rem;
   border: 1px solid var(--line); border-radius: 12px; background: var(--card); color: var(--fg);
   box-shadow: var(--shadow);
 }
 .search input[type=search]:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: transparent; }
 .search button {
-  padding: .8rem 1.25rem; font-size: 1rem; font-weight: 600; border: 0; border-radius: 12px;
+  flex: none; padding: .8rem 1.25rem; font-size: 1rem; font-weight: 600; border: 0; border-radius: 12px;
   background: var(--accent); color: var(--accent-ink); cursor: pointer;
 }
 .search button:hover { filter: brightness(1.05); }
@@ -231,9 +247,7 @@ h2 { margin-top: 2rem; font-size: 1.15rem; letter-spacing: -0.01em; }
 .moments-badge { color: var(--muted); font-size: .78rem; margin-left: .5rem; white-space: nowrap; }
 .meaning-badge { color: #1d7a5f; background: #e7f5ef; font-size: .78rem; margin-left: .5rem; padding: .1rem .45rem; border-radius: 999px; white-space: nowrap; }
 .upload-badge { display: inline-block; color: #2557c7; background: #eef4ff; font-size: .78rem; margin-left: .5rem; padding: .1rem .45rem; border-radius: 999px; white-space: nowrap; border: 1px solid #cdddff; }
-@media (prefers-color-scheme: dark) {
-  .upload-badge { color: #9db9f5; background: rgba(90, 130, 220, .14); border-color: rgba(120, 150, 220, .35); }
-}
+@media (prefers-color-scheme:dark){html:not([data-theme=light]) .upload-badge{ color: #9db9f5; background: rgba(90, 130, 220, .14); border-color: rgba(120, 150, 220, .35); }}html[data-theme=dark] .upload-badge{ color: #9db9f5; background: rgba(90, 130, 220, .14); border-color: rgba(120, 150, 220, .35); }
 
 /* "Transcribe your own audio" entry card on the landing page */
 .upload-card {
@@ -407,7 +421,7 @@ pre { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; 
   border: 1px solid color-mix(in srgb, #b7791f 30%, transparent);
   border-radius: 10px; padding: .55rem .75rem; margin: 0 0 .9rem; font-size: .88rem;
 }
-@media (prefers-color-scheme: dark) { .sync-warn { color: #e0b062; } }
+@media (prefers-color-scheme:dark){html:not([data-theme=light]) .sync-warn{ color: #e0b062; }}html[data-theme=dark] .sync-warn{ color: #e0b062; }
 .sync-row { display: flex; gap: .6rem; flex-wrap: wrap; }
 .sync-row input {
   flex: 1; min-width: 200px; padding: .7rem .85rem; font-size: 1rem; font: inherit;
@@ -573,7 +587,319 @@ pre { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; 
 .tl-title { color: var(--fg); text-decoration: none; font-weight: 600; overflow-wrap: anywhere; }
 .tl-title:hover { color: var(--accent); }
 .tl-detail { overflow-wrap: anywhere; }
-@media (prefers-color-scheme: dark) {
-  .tl.transcribe .tl-kind { color: #7fc4e8; }
-  .tl.save .tl-kind { color: #e0c068; }
+@media (prefers-color-scheme:dark){html:not([data-theme=light]) .tl.transcribe .tl-kind{ color: #7fc4e8; }html:not([data-theme=light]) .tl.save .tl-kind{ color: #e0c068; }}html[data-theme=dark] .tl.transcribe .tl-kind{ color: #7fc4e8; }html[data-theme=dark] .tl.save .tl-kind{ color: #e0c068; }
+
+/* feed promo card on the landing page (Clips feed + Q&A feed) */
+.feed-promo {
+  border: 1px solid var(--line); border-radius: var(--radius);
+  background: linear-gradient(135deg, var(--accent-soft), transparent 62%), var(--card);
+  box-shadow: var(--shadow); padding: 1.4rem 1.5rem;
+}
+.fp-eyebrow {
+  display: inline-block; font-size: .72rem; font-weight: 700; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--accent); margin-bottom: .3rem;
+}
+.fp-title { margin: 0 0 .35rem; font-size: 1.25rem; letter-spacing: -.01em; }
+.fp-sub { margin: 0; color: var(--muted); font-size: .94rem; line-height: 1.55; max-width: 54ch; }
+.fp-cards { display: flex; flex-wrap: wrap; gap: .7rem; margin-top: 1.1rem; }
+.fp-card {
+  flex: 1 1 220px; display: flex; align-items: center; gap: .8rem;
+  padding: .85rem 1rem; border: 1px solid var(--line); border-radius: 12px;
+  background: var(--card); text-decoration: none; color: var(--fg);
+  transition: border-color .15s, transform .15s;
+}
+.fp-card:hover, .fp-card:focus-visible { border-color: var(--accent); transform: translateY(-1px); }
+.fp-ic {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  width: 40px; height: 40px; border-radius: 50%;
+  background: var(--accent); color: var(--accent-ink);
+}
+.fp-body { display: flex; flex-direction: column; gap: .12rem; min-width: 0; }
+.fp-name { font-weight: 650; font-size: 1.02rem; }
+.fp-meta { color: var(--muted); font-size: .85rem; }
+@media (max-width: 540px) { .fp-card { flex: 1 1 100%; } }
+.fp-one { flex: 1 1 100%; }
+.fp-go { flex: none; margin-left: auto; color: var(--accent); font-size: 1.3rem; }
+
+/* Landing "quiet index": the four sections as one hairline 2x2 grid.
+   No card fills -- the 1px gap over --line paints the rules between tiles. */
+.sec-grid {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px; background: var(--line);
+  border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+}
+.sg-tile {
+  display: block; background: var(--bg); color: var(--fg); text-decoration: none;
+  padding: 1.4rem 1.05rem 1.3rem; min-height: 132px; transition: background .15s;
+}
+.sg-tile:hover, .sg-tile:focus-visible { background: var(--card); }
+.sg-ic { display: block; color: var(--accent); }
+.sg-title { margin-top: .75rem; font-size: 1rem; font-weight: 650; letter-spacing: -.01em; }
+.sg-sub { margin-top: .3rem; color: var(--muted); font-size: .84rem; line-height: 1.5; }
+@media (max-width: 380px) { .sg-tile { padding: 1.15rem .85rem 1.1rem; min-height: 124px; } }
+
+/* Q&A topic shortcuts under the landing grid. Reuses the .topic chip from the
+   hero "Try:" row so the page keeps one chip vocabulary. Scrolls sideways on a
+   phone rather than wrapping into a tall block. */
+.chip-sec { margin-top: 1.4rem; }
+.cs-label {
+  color: var(--muted); font-size: .78rem; font-weight: 600; letter-spacing: .05em;
+  text-transform: uppercase; margin: 0 0 .6rem;
+}
+.cs-row {
+  display: flex; gap: .45rem; overflow-x: auto; padding-bottom: .2rem;
+  scrollbar-width: none; -ms-overflow-style: none; -webkit-overflow-scrolling: touch;
+}
+.cs-row::-webkit-scrollbar { display: none; }
+.cs-row .topic { flex: none; white-space: nowrap; }
+.cs-all { color: var(--accent); border-color: var(--accent-soft); }
+
+/* "From this lecture": the clips and questions cut from it, above the transcript.
+   Collapsed by default so a long list never pushes the transcript down. */
+.lec-extras { margin: 1.1rem 0 .4rem; display: flex; flex-direction: column; gap: .5rem; }
+.lx { border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
+.lx > summary {
+  cursor: pointer; padding: .75rem .95rem; font-size: .92rem; color: var(--muted);
+  list-style: none; border-radius: 12px;
+}
+.lx > summary::-webkit-details-marker { display: none; }
+.lx > summary::after { content: ' ▾'; color: var(--faint); }
+.lx[open] > summary::after { content: ' ▴'; }
+.lx > summary strong { color: var(--fg); font-weight: 700; }
+.lx-list { list-style: none; margin: 0; padding: 0 .5rem .5rem; }
+.lx-list li + li { border-top: 1px solid var(--line); }
+.lx-list a {
+  display: flex; align-items: baseline; gap: .6rem; padding: .6rem .45rem;
+  text-decoration: none; color: var(--fg); border-radius: 8px;
+}
+.lx-list a:hover { background: var(--accent-soft); }
+.lx-t { flex: none; font-variant-numeric: tabular-nums; font-size: .8rem; color: var(--accent); font-weight: 600; }
+.lx-txt { flex: 1 1 auto; min-width: 0; font-size: .9rem; line-height: 1.45; }
+.lx-tag { flex: none; font-size: .72rem; color: var(--faint); text-transform: uppercase; letter-spacing: .04em; }
+
+/* =====================================================================
+   2026-09-03 mobile compactness pass (MOBILE_PLAN_2026-09-03.md).
+   Everything below is scoped to phones (<= 760px) unless stated. Desktop
+   keeps its layout; the only desktop-visible change is that the phone
+   controls (.topbar-m, .tabbar) are hidden there.
+   ===================================================================== */
+.topbar-m { display: none; }
+.tabbar { display: none; }
+
+@media (max-width: 760px) {
+  :root { --topbar-h: 48px; --tabbar-h: 56px; }
+  html { scroll-padding-top: calc(var(--topbar-h) + 8px); }
+  body { padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom)); }
+
+  /* one 48px bar: brand left, search + menu right. Section links move to the tab bar. */
+  .topbar {
+    height: var(--topbar-h); padding: 0 .4rem 0 .9rem; gap: .25rem;
+    flex-wrap: nowrap; padding-top: env(safe-area-inset-top);
+    box-sizing: content-box;
+  }
+  .topbar .topnav { display: none; }
+  .brand { font-size: .95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .topbar-m { display: flex; align-items: center; gap: 0; flex: none; }
+  .tb-ic {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 44px; height: 44px; border-radius: 12px; color: var(--fg); cursor: pointer; list-style: none;
+  }
+  .tb-ic svg { width: 22px; height: 22px; }
+  .tb-ic:active { background: var(--accent-soft); }
+  .tb-menu { position: relative; }
+  .tb-menu > summary::-webkit-details-marker { display: none; }
+  .tb-drop {
+    position: absolute; right: 0; top: 46px; z-index: 30; min-width: 220px;
+    display: flex; flex-direction: column; padding: .35rem;
+    background: var(--card); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow);
+  }
+  .tb-drop a {
+    display: flex; align-items: center; min-height: 44px; padding: 0 .9rem;
+    color: var(--fg); text-decoration: none; font-size: .95rem; border-radius: 10px;
+  }
+  .tb-drop a:active { background: var(--accent-soft); }
+  .tb-drop .nav-out { color: var(--muted); border-top: 1px solid var(--line); border-radius: 0; margin-top: .2rem; }
+
+  /* bottom tab bar */
+  .tabbar {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 25;
+    display: grid; grid-template-columns: repeat(5, 1fr);
+    height: calc(var(--tabbar-h) + env(safe-area-inset-bottom)); padding-bottom: env(safe-area-inset-bottom);
+    background: color-mix(in srgb, var(--panel) 92%, transparent); backdrop-filter: saturate(1.4) blur(12px);
+    border-top: 1px solid var(--line);
+  }
+  .tabbar a {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+    color: var(--muted); text-decoration: none; font-size: 12px; font-weight: 500; line-height: 1;
+  }
+  .tabbar a svg { width: 24px; height: 24px; }
+  .tabbar a.on { color: var(--fg); }
+  .tabbar a.on svg { color: var(--accent); }
+  .foot { padding-bottom: 1rem; }
+
+  /* ---- landing: tiles first, search second, hero copy last ---------------- */
+  main { padding: .75rem .9rem 3rem; }
+  main.landing { display: flex; flex-direction: column; }
+  main.landing .hero { order: 1; padding: .35rem 0 .6rem; text-align: left; }
+  main.landing .sec-tiles { order: 2; margin: .25rem -.9rem .5rem; }
+  .hero .eyebrow { display: none; }  /* the top bar already names him */
+  .hero-title { font-size: 1.45rem; margin: 0 0 .35rem; }
+  .hero-sub { margin: 0 0 .8rem; font-size: .93rem; line-height: 1.5; }
+  .hero-search { margin: 0 0 .6rem; }
+  .hero-search input[type=search] { padding: .7rem .95rem; font-size: 1rem; min-height: 44px; }
+  .hero-search button { min-height: 44px; padding: 0 1rem; }
+  .topic-row {
+    justify-content: flex-start; flex-wrap: nowrap; overflow-x: auto; margin: 0 -.9rem .5rem; padding: 0 .9rem;
+    scrollbar-width: none; -webkit-overflow-scrolling: touch;
+  }
+  .topic-row::-webkit-scrollbar { display: none; }
+  .topic { flex: none; min-height: 36px; display: inline-flex; align-items: center; padding: 0 .85rem; font-size: .9rem; }
+  .hero-stats { justify-content: flex-start; font-size: .85rem; }
+  .sg-tile { min-height: 0; padding: .95rem .9rem .85rem; }
+  .sg-sub { font-size: .8rem; }
+  .sg-title { margin-top: .5rem; }
+
+  /* ---- video (lecture) page: video full-bleed 16:9, one-row toolbar ------- */
+  .vhead { font-size: 1.05rem; line-height: 1.3; margin: .2rem 0 .5rem; }
+  .stage { margin: 0 -.9rem .3rem; padding: 0 0 .35rem; }
+  .player-frame { max-width: none; margin: 0; border-radius: 0; box-shadow: none; }
+  .vtools {
+    flex-wrap: nowrap; overflow-x: auto; gap: .5rem; padding: .45rem .9rem 0; scrollbar-width: none;
+  }
+  .vtools::-webkit-scrollbar { display: none; }
+  .vtools > * { flex: none; }
+  .vtools .seg button, .vtools .btn, .export > summary { min-height: 40px; padding: 0 .8rem; }
+  .filter { min-height: 44px; margin: .6rem 0; }
+  .transcript .line { padding: .6rem 0; gap: .7rem; }
+  .line .ts { min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; }
+  .line .text { font-size: 16px; line-height: 1.5; }
+
+  /* ---- lists ---------------------------------------------------------- */
+  .card-grid { grid-template-columns: 1fr; gap: .5rem; }
+  .vcard-link { padding: .75rem .9rem; min-height: 64px; justify-content: center; }
+  .hits .hit-actions .act { min-height: 44px; }
+  .btn, .act { min-height: 44px; }
+  .search input[type=search], .search button { min-height: 44px; }
+}
+
+/* --- desktop nav: operator pages behind one "More" menu ------------------- */
+.nav-more { position: relative; }
+.nav-more > summary { list-style: none; cursor: pointer; }
+.nav-more > summary::-webkit-details-marker { display: none; }
+.nav-more > summary::after { content: " \25BE"; font-size: .8em; }
+.nav-drop {
+  position: absolute; right: 0; top: calc(100% + 8px); z-index: 30; min-width: 200px;
+  display: flex; flex-direction: column; padding: .35rem;
+  background: var(--card); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow);
+}
+.topnav .nav-drop a { display: flex; align-items: center; min-height: 40px; padding: 0 .8rem; margin: 0;
+  color: var(--fg); text-decoration: none; border-radius: 8px; white-space: nowrap; }
+.topnav .nav-drop a:hover { background: var(--accent-soft); }
+.topnav .nav-drop .nav-out { color: var(--muted); border-top: 1px solid var(--line); border-radius: 0; margin-top: .2rem; }
+.tb-sep { display: block; padding: .55rem .9rem .15rem; margin-top: .2rem; border-top: 1px solid var(--line);
+  color: var(--faint); font-size: .72rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.topnav .nav-more > summary {
+  color: var(--muted); font-size: .9rem; font-weight: 500; padding: .4rem .7rem; border-radius: 8px;
+  transition: color .12s, background .12s;
+}
+.topnav .nav-more > summary:hover, .topnav .nav-more[open] > summary { color: var(--fg); background: var(--accent-soft); }
+
+/* --- the home page hero: catch a thought ------------------------------- */
+.hero.catch { position: relative; overflow: hidden; padding: 0; text-align: center; display: flex; flex-direction: column; }
+main.landing .hero.catch { padding: 0; text-align: center; }
+/* the field in light: paper with depth. Tokens for the bubbles and the box, light first, dark after */
+.hero.catch { --tink: #172420; --tline: rgba(18,46,38,.10); --tsh: 0 1px 1px rgba(18,46,38,.05), 0 2px 6px rgba(18,46,38,.06), 0 14px 32px -12px rgba(18,46,38,.30);
+  --tglow: 0 18px 40px -12px rgba(12,107,87,.40); --bsh: 0 1px 2px rgba(18,46,38,.06), 0 28px 60px -24px rgba(18,46,38,.38); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme=light]) .hero.catch { --tink: var(--fg); --tline: var(--line); --tsh: var(--shadow); --tglow: var(--shadow); --bsh: var(--shadow); } }
+:root[data-theme=dark] .hero.catch { --tink: var(--fg); --tline: var(--line); --tsh: var(--shadow); --tglow: var(--shadow); --bsh: var(--shadow); }
+.catch-field { position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  background:
+    radial-gradient(140% 100% at 50% 50%, transparent 58%, rgba(18,46,38,.13) 100%),
+    radial-gradient(70% 50% at 50% 40%, rgba(255,255,255,.55), transparent 70%),
+    radial-gradient(120% 80% at 50% 108%, rgba(12,107,87,.18), transparent 62%),
+    linear-gradient(180deg, #edf1ee 0%, #dde5e0 50%, #cbd7d0 100%); }
+/* a fine grain on the paper, light mode only */
+.catch-field::before { content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none; opacity: .07; mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .6 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme=light]) .catch-field::before { display: none; } }
+:root[data-theme=dark] .catch-field::before { display: none; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme=light]) .catch-field { background: radial-gradient(ellipse at 50% 50%, rgba(87,214,180,.13), transparent 60%), linear-gradient(180deg, #191b18 0%, #0d1210 100%); } }
+:root[data-theme=dark] .catch-field { background: radial-gradient(ellipse at 50% 50%, rgba(87,214,180,.13), transparent 60%), linear-gradient(180deg, #191b18 0%, #0d1210 100%); }
+main.landing { padding-top: 0; }   /* the field meets the top bar */
+.catch-field .thought { pointer-events: auto; }
+.catch-box { position: relative; z-index: 2; width: 100%; max-width: 620px; margin: auto; padding: 20px 20px 18px;
+  border: 1px solid var(--tline); border-radius: 20px; box-shadow: var(--bsh);
+  background: color-mix(in srgb, var(--card) 88%, transparent); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+.catch .hero-title { font-size: clamp(1.45rem, 3vw, 1.9rem); margin-bottom: .35rem; }
+.catch .hero-sub { margin: 0 auto .9rem; max-width: 46ch; font-size: .95rem; line-height: 1.45; opacity: .72; }
+.catch .hero-search { margin: 0 auto; max-width: none; flex-wrap: wrap; }
+/* the second way in: the situations page */
+.catch .hero-alt { display: inline-flex; align-items: center; justify-content: center; gap: 6px; margin: 0; padding: 0 14px; flex: none;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--card); color: var(--fg); font-weight: 600; font-size: .9rem; text-decoration: none; white-space: nowrap; }
+.catch .hero-alt:hover { border-color: var(--accent); color: var(--accent); text-decoration: none; }
+/* the search button is only the glass: no word */
+.catch .hero-search button.go { width: 50px; min-width: 50px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
+.catch .hero-search button.go svg { width: 22px; height: 22px; }
+/* continue where you left off, your path, today's question */
+.catch-more { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 10px; margin: 10px 0 0; font-size: .84rem; color: var(--muted); line-height: 1.4; }
+.catch-more:empty { display: none; }
+.catch-more a { color: var(--fg); font-weight: 600; text-decoration: none; }
+.catch-more a:hover { color: var(--accent); }
+.catch-more a.today { color: var(--accent); }
+.catch-more small { color: var(--muted); font-weight: 500; }
+.thought { position: absolute; left: var(--x); bottom: -70px; z-index: 1; max-width: min(300px, 70vw); padding: 10px 14px;
+  border: 1px solid var(--tline); border-radius: 18px; background: var(--card); box-shadow: var(--tsh);
+  text-decoration: none; color: var(--tink); font-size: 14.5px; line-height: 1.4; text-align: left; text-wrap: balance; cursor: pointer;
+  animation: catch-rise var(--d) linear var(--delay) 1 both; will-change: translate, opacity; opacity: 0; }   /* once; the script removes it at the top */
+.thought:hover, .thought:focus-visible { border-color: var(--accent); z-index: 3; text-decoration: none; }
+.thought { transition: transform .35s ease, scale .16s cubic-bezier(.23,1,.32,1), border-color .3s, box-shadow .3s; }
+.thought:hover { box-shadow: 0 0 0 3px var(--accent-soft), var(--tsh); }
+.thought:active { scale: .97; }
+/* reduced motion: the same questions, standing still under the box */
+.catch-still { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin: 12px 0 0; font-size: .84rem; color: var(--muted); }
+.catch-still[hidden] { display: none; }
+.catch-still span { width: 100%; text-align: center; font-weight: 600; font-size: .72rem; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); }
+.catch-still a { display: inline-flex; align-items: center; min-height: 36px; padding: 0 12px; border: 1px solid var(--tline); border-radius: 18px; background: var(--card); color: var(--tink); text-decoration: none; font-size: 13.5px; }
+.catch-still a:hover { border-color: var(--accent); color: var(--accent); }
+.thought.near { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft), var(--tglow); z-index: 3; }
+.catch-field { transition: translate .6s ease; }
+.catch-light { position: absolute; left: -280px; top: -280px; width: 560px; height: 560px; border-radius: 50%; z-index: -1; pointer-events: none; opacity: 0;
+  background: radial-gradient(circle, rgba(255,255,255,.95) 0%, rgba(255,255,255,.5) 20%, rgba(12,107,87,.10) 46%, transparent 68%); transition: opacity .6s ease; will-change: translate; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme=light]) .catch-light { background: radial-gradient(circle, rgba(87,214,180,.22), rgba(87,214,180,.08) 42%, transparent 70%); } }
+:root[data-theme=dark] .catch-light { background: radial-gradient(circle, rgba(87,214,180,.22), rgba(87,214,180,.08) 42%, transparent 70%); }
+.thought.typing { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft), var(--tglow); }
+@keyframes catch-rise { 0% { translate: 0 0; opacity: 0; } 7% { opacity: 1; } 88% { opacity: 1; } 100% { translate: 0 calc(-1 * var(--h)); opacity: 0; } }
+@keyframes catch-catch { to { transform: translateY(-40px) scale(.7); opacity: 0; } }
+/* the landing page is the field alone: no footer under it, and the page ground matches the field's foot */
+body.landing-page .sh-foot { display: none; }
+/* the field fills exactly what is left under the top bar (and above the tab bar), whatever their height */
+body.landing-page { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; }
+body.landing-page main.landing { flex: 1 1 auto; display: flex; flex-direction: column; width: 100%; padding-bottom: 0; }
+body.landing-page main.landing .hero.catch { flex: 1 1 auto; min-height: 0; margin-bottom: 0; }
+body.landing-page { background: #cbd7d0; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme=light]) body.landing-page { background: #0d1210; } }
+:root[data-theme=dark] body.landing-page { background: #0d1210; }
+/* full width from tablet up, so the thoughts have room */
+@media (min-width: 761px) { .hero.catch { margin-left: calc(50% - 50vw); margin-right: calc(50% - 50vw); width: 100vw; } }
+/* wide screens: the field fills the screen, the box in the middle of the drift */
+@media (min-width: 1024px) {
+  main.landing { padding-bottom: 0; }
+  .hero.catch { min-height: calc(100vh - var(--sh-top-h, 58px)); }
+}
+/* phones and tablets: the field fills the screen, the box at its foot like a chat box */
+@media (max-width: 1023px) {
+  main.landing { padding-bottom: 0; }
+  .hero.catch { min-height: calc(100vh - var(--sh-top-h, 58px)); }
+  .catch-box { margin: auto 12px 10px; width: auto; }
+}
+@media (max-width: 760px) {
+  main.landing .hero.catch { margin: 0 -.9rem;
+    min-height: calc(100vh - var(--sh-top-h, 48px) - var(--sh-tab-h, 56px));
+    min-height: calc(100dvh - var(--sh-top-h, 48px) - var(--sh-tab-h, 56px) - env(safe-area-inset-bottom, 0px)); }
+  .catch-box { margin: auto .9rem 8px; padding: 16px 12px 14px; }
+  .catch .hero-title { font-size: 1.45rem; margin-bottom: .6rem; }
+  .catch .hero-alt { flex-basis: 100%; min-height: 0; margin: 2px 0 0; padding: 4px 0 0; border: 0; background: none; color: var(--accent); font-size: .9rem; }
+  .thought { max-width: 70vw; font-size: 14px; }
+}
+}
 }

@@ -25,7 +25,7 @@ import search
 import transcribe
 import transliterate
 from flask import (Flask, abort, jsonify, redirect, render_template, request,
-                   send_file, session, url_for)
+                   send_file, send_from_directory, session, url_for)
 from markupsafe import Markup
 from werkzeug.utils import secure_filename
 
@@ -75,8 +75,8 @@ _LOGIN_MAX, _LOGIN_WINDOW = 5, 600
 
 
 def _client_ip():
-    fwd = request.headers.get("X-Forwarded-For", "")
-    return (fwd.split(",")[0].strip() if fwd else "") or request.remote_addr or "?"
+    # X-Real-IP is set by nginx and cannot be spoofed; X-Forwarded-For can be.
+    return request.headers.get("X-Real-IP") or request.remote_addr or "?"
 
 # Migrate the store in place on startup so newly-added columns (uploaded_at,
 # audio_path, word_tokens) exist before any query touches them. Idempotent.
@@ -227,6 +227,17 @@ def _landing_context_uncached():
         "playlists": tags, "recent": recent, "topics": _SUGGESTED_TOPICS,
         "situations": _situations.featured() if _situations else [],
     }
+
+
+@app.route("/privacy")
+def privacy():
+    return render_template("privacy.html")
+
+
+@app.route("/sw.js")
+def _sw():
+    # Served from root so the worker's scope covers the whole site.
+    return send_from_directory(app.static_folder, "sw.js", mimetype="application/javascript")
 
 
 @app.route("/")
