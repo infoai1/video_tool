@@ -892,13 +892,13 @@ body.landing-page { background: #cbd7d0; }
 @media (max-width: 1023px) {
   main.landing { padding-bottom: 0; }
   .hero.catch { min-height: calc(100vh - var(--sh-top-h, 58px)); }
-  .catch-box { margin: auto 12px; width: auto; }
+  .catch-box { margin: auto; width: calc(100% - 24px); }
 }
 @media (max-width: 760px) {
-  main.landing .hero.catch { margin: 0 -.9rem;
-    min-height: calc(100vh - var(--sh-top-h, 48px) - var(--sh-tab-h, 56px));
-    min-height: calc(100dvh - var(--sh-top-h, 48px) - var(--sh-tab-h, 56px) - env(safe-area-inset-bottom, 0px)); }
-  .catch-box { margin: auto .9rem; padding: 16px 12px 14px; }
+  /* phone: no full-height "field" (it was half a screen of empty gradient
+     above the box); the box sits at the top, People asked under it */
+  main.landing .hero.catch { margin: 0 -.9rem; min-height: 0; padding: 14px 0 18px; }
+  .catch-box { margin: 0 .9rem; width: auto; padding: 16px 12px 14px; }
   .catch .hero-title { font-size: 1.45rem; margin-bottom: .6rem; }
   .catch .hero-alt { flex-basis: 100%; min-height: 0; margin: 2px 0 0; padding: 4px 0 0; border: 0; background: none; color: var(--accent); font-size: .9rem; }
   .thought { max-width: 70vw; font-size: 14px; }
