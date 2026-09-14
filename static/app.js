@@ -10,7 +10,9 @@
       function (el) { return !el.textContent.trim(); }
     );
     var total = pending.length;
-    if (!total) { if (onProgress) onProgress(0, 0, false); return; }
+    // Visitors never call the LLM filler (owner decision 2026-09-05); lines
+    // without Roman text simply stay Urdu-only for them.
+    if (!total || window.VT_OPERATOR === false) { if (onProgress) onProgress(0, 0, false); return; }
 
     var byId = {};
     pending.forEach(function (el) { byId[el.getAttribute("data-seg")] = el; });
@@ -53,6 +55,7 @@
 
   // Romanize a specific set of segment ids (not the whole page), then run `after`.
   async function romanizeIds(ids, byId, after) {
+    if (window.VT_OPERATOR === false) return;
     for (var i = 0; i < ids.length; i += 25) {
       var chunk = ids.slice(i, i + 25);
       try {

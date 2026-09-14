@@ -2,33 +2,29 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}Roman Urdu Video Transcripts{% endblock %}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <link rel="preconnect" href="https://www.youtube.com">
+  <link rel="preconnect" href="https://i.ytimg.com">
+  <link rel="dns-prefetch" href="https://googlevideo.com">
+  <meta name="theme-color" content="#f6f5f1" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#14130e" media="(prefers-color-scheme: dark)">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='icon-192.png') }}">
+  <title>{% block title %}Maulana Wahiduddin Khan{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  {{ shell_css }}
 </head>
-<body>
-  <header class="topbar">
-    <a class="brand" href="{{ url_for('index') }}">Roman Urdu Transcripts</a>
-    <nav>
-      <a href="{{ url_for('index') }}">Search</a>
-      <a href="{{ url_for('usage_page') }}">Usage</a>
-      <a href="{{ url_for('videos') }}">Videos</a>
-      <a href="/clips">Clips</a>
-      <a href="/clips/qa">Q&amp;A</a>
-      <a href="{{ url_for('upload_page') }}">Upload</a>
-      {% if session.get('user') %}<a class="nav-out" href="{{ url_for('logout') }}">Sign out</a>{% endif %}
-    </nav>
-  </header>
-  <main>
+<body class="{% block body_class %}{% endblock %}">
+  {{ shell_header }}
+  <main class="{% block main_class %}{% endblock %}">
     {% block content %}{% endblock %}
   </main>
-  <footer class="foot">
-    <nav class="foot-nav">
-      <a href="{{ url_for('dashboard') }}">Dashboard</a>
-      <a href="{{ url_for('feedback_page') }}">Feedback &amp; bug reports</a>
-    </nav>
-    <p>Maulana's video lectures, transcribed and transliterated for search.</p>
-  </footer>
+  {{ shell_footer }}
+  {{ shell_tabbar }}
+  <script>window.VT_OPERATOR = {{ 'true' if operator else 'false' }};</script>
   <script src="{{ url_for('static', filename='app.js') }}"></script>
+  <script src="{{ url_for('static', filename='pwa.js') }}"></script>
 </body>
 </html>

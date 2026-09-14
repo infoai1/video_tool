@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Privacy Policy{% endblock %}
+{% block content %}
+<style>
+  .pp{max-width:680px;margin:2rem auto;padding:0 1.1rem;line-height:1.6}
+  .pp h1{font-size:1.6rem;margin:.2rem 0 .3rem}
+  .pp .upd{color:var(--muted,#6d6a62);font-size:.9rem;margin-bottom:1.6rem}
+  .pp h2{font-size:1.15rem;margin:1.6rem 0 .4rem}
+  .pp a{color:var(--accent,#0c6b57)}
+  .pp ul{padding-left:1.2rem}
+</style>
+<div class="pp">
+  <h1>Privacy Policy</h1>
+  <div class="upd">Last updated: 13 September 2026</div>
+
+  <p>This app and website (“Spiritual Message”, video.spiritualmessage.org) are a free,
+  non-commercial service by CPS Global to help people study the teachings of Maulana
+  Wahiduddin Khan. There is no paywall and nothing is sold.</p>
+
+  <h2>What we collect</h2>
+  <ul>
+    <li><strong>Search queries:</strong> the words you search are logged (without any personal
+      identifier) so we can see which topics people look for and which searches return nothing.
+      This helps us improve the library. We do not build a profile of you.</li>
+    <li><strong>Basic usage analytics:</strong> anonymous page-view counts via a self-hosted
+      analytics tool. No cross-site tracking, no advertising cookies.</li>
+    <li><strong>Account data (only if you sign in):</strong> if you have an operator/uploader
+      login, we store your username and session cookie so the app knows you are signed in.
+      Most visitors never sign in.</li>
+  </ul>
+  <p>We do not ask for your name, phone number, or location, and we do not sell or share any
+  data with advertisers.</p>
+
+  <h2>YouTube videos</h2>
+  <p>Lectures are played using the embedded <strong>YouTube player</strong>. When a video loads,
+  YouTube and Google may set cookies and collect data (such as your IP address and device
+  information) under their own policies — this happens directly between your device and Google,
+  not through us. By watching a video you are also subject to:</p>
+  <ul>
+    <li><a href="https://www.youtube.com/t/terms" target="_blank" rel="noopener">YouTube Terms of Service</a></li>
+    <li><a href="https://policies.google.com/privacy" target="_blank" rel="noopener">Google Privacy Policy</a></li>
+  </ul>
+
+  <h2>Audio uploads</h2>
+  <p>If you use the upload feature to generate a transcript, your audio file is sent to a
+  speech-to-text service for processing and then stored so the transcript can be displayed.
+  Do not upload anything you are not authorised to share.</p>
+
+  <h2>Children</h2>
+  <p>This service is intended for a general audience and is not directed at children under 13.</p>
+
+  <h2>Your choices</h2>
+  <p>You can clear the app’s stored data at any time from your browser or phone settings.
+  Search logs are anonymous and cannot be linked back to you to delete individually.</p>
+
+  <h2>Contact</h2>
+  <p>Questions about this policy? Email
+  <a href="mailto:info@spiritualmessage.org">info@spiritualmessage.org</a>.</p>
+</div>
+{% endblock %}

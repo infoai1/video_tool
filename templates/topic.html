@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ topic }} — Study by Topic</title>
+<style>
+  :root{ --bg:#faf9f6; --card:#fff; --ink:#1c1b19; --muted:#6b6a65; --line:#e7e5df; --accent:#1d7a5f; --accent-bg:#e6f2ee; }
+  @media (prefers-color-scheme:dark){:root:not([data-theme=light]){ --bg:#141416; --card:#1e1e22; --ink:#ececec; --muted:#a3a29c; --line:#33333a; --accent:#5dcaa5; --accent-bg:#123a30; }}:root[data-theme=dark]{ --bg:#141416; --card:#1e1e22; --ink:#ececec; --muted:#a3a29c; --line:#33333a; --accent:#5dcaa5; --accent-bg:#123a30; }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;line-height:1.55}
+  .wrap{max-width:680px;margin:0 auto;padding:22px 18px 60px}
+  h1{font-size:26px;font-weight:600;margin:0 0 4px}
+  .sub{color:var(--muted);font-size:14px;margin:0 0 22px}
+  .shdr{font-size:13px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:26px 0 12px}
+  .asp{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--accent);
+       border-radius:10px;padding:11px 14px;margin-bottom:9px}
+  .asp .t{font-size:15px;font-weight:600;margin:0 0 2px}
+  .asp .b{font-size:13px;color:var(--muted);margin:0}
+  a.lec{display:block;text-decoration:none;color:inherit;background:var(--card);border:1px solid var(--line);
+        border-radius:14px;padding:15px 16px;margin-bottom:11px}
+  .lt{font-size:16px;font-weight:600;margin:0 0 6px}
+  .lm{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--muted)}
+  .pill{font-size:12px;font-weight:600;color:var(--accent);background:var(--accent-bg);padding:2px 9px;border-radius:8px}
+  .go{margin-left:auto;color:var(--accent);font-weight:600}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>{{ topic }}</h1>
+  <p class="sub">Maulana Wahiduddin Khan on this theme · watch, understand, share</p>
+
+  {% if aspects %}
+  <div class="shdr">What this covers</div>
+  {% for a in aspects %}
+  <div class="asp"><p class="t">{{ a.title }}</p><p class="b">{{ a.blurb }}</p></div>
+  {% endfor %}
+  {% endif %}
+
+  <div class="shdr">{{ lectures|length }} lectures</div>
+  {% for l in lectures %}
+  <a class="lec" href="/lecture/{{ l.yid }}">
+    <div class="lt">{{ l.title }}</div>
+    <div class="lm">
+      <span class="pill">{{ l.sections }} moments</span>
+      <span class="go">Smart summary →</span>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+</body>
+</html>

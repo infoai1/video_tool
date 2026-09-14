@@ -37,7 +37,7 @@ main.vwmain{max-width:none;padding:0}
 .vw-rail h4 a{color:var(--accent);letter-spacing:0;text-transform:none;font-size:12.5px;text-decoration:none}
 .vw-up{display:flex;gap:11px;padding:9px 12px;border-top:1px solid var(--line);color:var(--ink);text-decoration:none}
 .vw-up:hover{background:var(--bg);text-decoration:none}
-.vw-up .th{position:relative;width:118px;flex:none;aspect-ratio:16/9;border-radius:8px;overflow:hidden;background:#12100c}
+.vw-up .th{position:relative;width:118px;flex:none;aspect-ratio:16/9;border-radius:8px;overflow:hidden;background:var(--line)}
 .vw-up .th img{width:100%;height:100%;object-fit:cover;display:block;opacity:.9}
 .vw-up .th .d{position:absolute;right:5px;bottom:5px;font-size:10.5px;font-weight:600;color:#fff;background:rgba(0,0,0,.62);border-radius:5px;padding:1px 5px}
 .vw-up>span:last-child{min-width:0}
@@ -61,7 +61,7 @@ main.vwmain{max-width:none;padding:0}
 @media (max-width:560px){.vw-grid{grid-template-columns:1fr 1fr;gap:12px 10px}}
 .vw-card{display:block;color:var(--ink);text-decoration:none}
 .vw-card .th,.vw-card .t,.vw-card .m{display:block}
-.vw-card .th{position:relative;aspect-ratio:16/9;border-radius:12px;overflow:hidden;background:#12100c;border:1px solid var(--line)}
+.vw-card .th{position:relative;aspect-ratio:16/9;border-radius:12px;overflow:hidden;background:var(--line);border:1px solid var(--line)}
 .vw-card .th img{width:100%;height:100%;object-fit:cover;display:block;opacity:.92;transition:transform .3s}
 .vw-card:hover .th img{transform:scale(1.03)}
 .vw-card .th .pl{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.94);color:#12100c;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .18s}
@@ -129,7 +129,7 @@ main.vwmain{max-width:none;padding:0}
 <div class="vw-grid">
 {% for v in items %}
 <a class="vw-card" href="/videos?v={{ v.id }}">
-  <span class="th">{% if v.yt %}<img loading="lazy" src="https://i.ytimg.com/vi/{{ v.yt }}/mqdefault.jpg" alt="">{% endif %}<span class="pl">{{ play|safe }}</span>{% if v.dur %}<span class="d">{{ v.dur }}</span>{% endif %}</span>
+  <span class="th">{% if v.yt %}<img loading="{{ 'eager' if loop.index <= 8 else 'lazy' }}" src="https://i.ytimg.com/vi/{{ v.yt }}/mqdefault.jpg" alt="">{% endif %}<span class="pl">{{ play|safe }}</span>{% if v.dur %}<span class="d">{{ v.dur }}</span>{% endif %}</span>
   <span class="t">{{ v.title }}</span>
   <span class="m">{% if v.year %}{{ v.year }}{% endif %}{% if v.refs %} · {{ v.refs }} refs{% endif %}{% if v.clips %} · {{ v.clips }} clips{% endif %}</span>
 </a>

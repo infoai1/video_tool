@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ video.title or 'Video' }} — Roman Urdu Transcripts{% endblock %}
+{% block title %}{{ video.title or 'Video' }} — Maulana Wahiduddin Khan{% endblock %}
 {% block content %}
 <style>
   .kw-on { background: var(--mark, #ffe9a8); border-radius: 3px; box-shadow: 0 0 0 2px var(--mark, #ffe9a8); }
@@ -43,10 +43,12 @@
       <button type="button" data-mode="urdu">Urdu</button>
     </div>
 
+    {% if operator %}
     <button id="save-video" class="btn ghost star-btn {{ 'on' if saved_video }}" type="button"
             data-video="{{ video.id }}" title="Save this video to your library">
       <span class="star">{{ '★' if saved_video else '☆' }}</span> <span class="lbl">{{ 'Saved' if saved_video else 'Save' }}</span>
     </button>
+    {% endif %}
 
     <details class="export">
       <summary class="btn">Export .docx</summary>
@@ -75,6 +77,40 @@
 
 {% if video.youtube_url or video.source == 'user_upload' %}
 <button id="follow-chip" class="btn follow-chip" type="button" hidden>⤓ Follow along</button>
+{% endif %}
+
+{% if lecture_clips or lecture_qa %}
+{# What was cut from this lecture. Items carry class="seek" so the existing
+   click-to-seek handler jumps the player to that moment. #}
+<section class="lec-extras">
+  {% if lecture_clips %}
+  <details class="lx">
+    <summary><strong>{{ lecture_clips|length }}</strong> clip{{ '' if lecture_clips|length == 1 else 's' }} from this lecture</summary>
+    <ol class="lx-list">
+      {% for c in lecture_clips %}
+      <li><a class="seek" data-t="{{ c.start }}" href="#t{{ c.start }}">
+        <span class="lx-t">{{ c.hhmm }}</span>
+        <span class="lx-txt">{{ c.topic }}</span>
+        {% if c.scale %}<span class="lx-tag">{{ c.scale }}</span>{% endif %}
+      </a></li>
+      {% endfor %}
+    </ol>
+  </details>
+  {% endif %}
+  {% if lecture_qa %}
+  <details class="lx">
+    <summary><strong>{{ lecture_qa|length }}</strong> question{{ '' if lecture_qa|length == 1 else 's' }} answered here</summary>
+    <ol class="lx-list">
+      {% for a in lecture_qa %}
+      <li><a class="seek" data-t="{{ a.start }}" href="#t{{ a.start }}">
+        <span class="lx-t">{{ a.hhmm }}</span>
+        <span class="lx-txt">{{ a.q }}</span>
+      </a></li>
+      {% endfor %}
+    </ol>
+  </details>
+  {% endif %}
+</section>
 {% endif %}
 
 <ol class="transcript{% if video.youtube_url or video.source == 'user_upload' %} seekable{% endif %}" id="transcript">
