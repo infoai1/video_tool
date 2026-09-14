@@ -812,14 +812,16 @@ body.landing-page main.landing { max-width: 1240px; padding-top: 0; padding-bott
 .c3-sub { font-family: Georgia, "Times New Roman", serif; font-weight: 400; font-size: clamp(1.05rem, 1.6vw, 1.2rem); line-height: 1.4; margin: 0 0 12px; color: var(--fg); text-wrap: balance; }
 .c3-sub em { font-style: italic; color: var(--accent); }
 .c3-expl { color: var(--muted); font-size: .92rem; line-height: 1.5; margin: 0 0 20px; }
-.c3-srch { display: flex; align-items: center; gap: 4px; background: var(--card); border: 1px solid var(--line); border-radius: 999px; box-shadow: var(--shadow); padding: 5px; }
-.c3-srch input { flex: 1; min-width: 0; height: 48px; padding: 0 0 0 18px; border: 0; background: transparent; color: var(--fg); font: inherit; font-size: 16px; -webkit-appearance: none; }
+/* flat field that matches the page: thin border, gentle radius, no pill or
+   drop shadow, mic inline, a squared (not circular) submit */
+.c3-srch { display: flex; align-items: center; gap: 2px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; box-shadow: none; padding: 4px 4px 4px 0; }
+.c3-srch input { flex: 1; min-width: 0; height: 48px; padding: 0 4px 0 16px; border: 0; background: transparent; color: var(--fg); font: inherit; font-size: 16px; -webkit-appearance: none; }
 .c3-srch input::placeholder { color: var(--muted); }
 .c3-srch input:focus { outline: none; }
-.c3-srch:focus-within { border-color: var(--accent); }
-.c3-srch .sh-voice button.sh-mic { border: 0; background: transparent; border-radius: 999px; width: 48px; height: 48px; }
-.c3-srch .go { flex: none; width: 48px; height: 48px; border: 0; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0; }
-.c3-srch .go svg { width: 22px; height: 22px; }
+.c3-srch:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.c3-srch .sh-voice button.sh-mic { border: 0; background: transparent; border-radius: 8px; width: 44px; height: 44px; color: var(--muted); }
+.c3-srch .go { flex: none; width: 44px; height: 44px; border: 0; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; background: var(--accent); color: var(--accent-ink); cursor: pointer; padding: 0; }
+.c3-srch .go svg { width: 20px; height: 20px; }
 .c3-al { list-style: none; margin: 20px 0 4px; padding: 0; border-top: 1px solid var(--line); }
 .c3-al li { border-bottom: 1px solid var(--line); }
 .c3-al li:last-child { border-bottom: 0; }
@@ -843,7 +845,7 @@ body.landing-page main.landing { max-width: 1240px; padding-top: 0; padding-bott
      portrait to the right edge, both full hero height. No floating card, no
      dead black band, content aligned to the centred 1200px column. */
   .c3 { position: relative; isolation: isolate; display: flex; align-items: stretch; min-height: 600px; margin: 0 calc(50% - 50vw); padding: 0; background: #0b0d0d; }
-  .c3-card { width: 52%; max-width: none; margin: 0; padding: 56px 48px 56px max(24px, calc(50vw - 600px)); border-radius: 0; border-color: transparent; box-shadow: 10px 0 30px rgba(8,10,10,.22); display: flex; flex-direction: column; justify-content: center; background: var(--bg); }
+  .c3-card { width: 52%; max-width: none; margin: 0; padding: 56px 48px 56px max(24px, calc(50vw - 600px)); border-radius: 0; border-color: transparent; box-shadow: 14px 0 22px -14px rgba(8,10,10,.5); display: flex; flex-direction: column; justify-content: center; background: var(--bg); }
   .c3-port { position: absolute; top: 0; bottom: 0; right: 0; left: auto; z-index: -2; width: 48%; height: 100%; aspect-ratio: auto; margin: 0; border-radius: 0; object-position: 50% 14%; }
   .c3::after { content: ""; position: absolute; top: 0; bottom: 0; left: 52%; width: 80px; z-index: -1; pointer-events: none;
     background: linear-gradient(90deg, rgba(8,10,10,.45), rgba(8,10,10,0)); }

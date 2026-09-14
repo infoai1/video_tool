@@ -19,7 +19,7 @@
       <li data-kind="qa" data-title="{{ u.title }}" data-yid="{{ u.yid }}" data-start="{{ u.start }}" data-end="{{ u.end }}">
         <button type="button" class="qrow" aria-expanded="false">
           <span class="ts">{{ u.dur }}</span>
-          <span class="c3-q"><b>{{ u.title }}</b>{% set who = [u.asker ~ (', ' ~ u.city if u.city else ''), u.year]|select|join(' · ') %}{% if who %}<span><bdi>{{ who }}</bdi></span>{% endif %}</span>
+          <span class="c3-q"><b>{{ u.title }}</b>{% if u.year %}<span>{{ u.year }}</span>{% endif %}</span>
           <span class="pl" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span>
         </button>
         <div class="c3-play" hidden><a href="/asked?q={{ u.title|urlencode }}&amp;play={{ u.id }}">Full answer &rarr;</a></div>
