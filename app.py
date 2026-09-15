@@ -21,6 +21,7 @@ import db
 import export
 import jobs
 import library
+import llms
 import search
 import seo
 import source
@@ -285,6 +286,28 @@ if INDEXNOW_KEY:
     @app.route(f"/{INDEXNOW_KEY}.txt")
     def _indexnow():
         return INDEXNOW_KEY, 200, {"Content-Type": "text/plain; charset=utf-8"}
+
+
+@app.route("/llms.txt")
+def _llms():
+    """How to use this site, for an assistant that cannot type into a search box."""
+    return llms.text(request.host), 200, {"Content-Type": "text/plain; charset=utf-8"}
+
+
+@app.route("/opensearch.xml")
+def _opensearch():
+    """The standard way to tell a browser or a crawler what our search URL is."""
+    base = f"https://{request.host}"
+    xml = ('<?xml version="1.0" encoding="UTF-8"?>\n'
+           '<OpenSearchDescription xmlns="http://a9.com/-/spec/opensearch/1.1/">'
+           "<ShortName>Maulana Wahiduddin Khan</ShortName>"
+           "<Description>Search the transcripts of his recorded talks: his answers, "
+           "the verses and hadith he cites, lectures and clips.</Description>"
+           "<InputEncoding>UTF-8</InputEncoding>"
+           f'<Url type="text/html" method="get" template="{base}/search?q={{searchTerms}}"/>'
+           f"<Image height=\"16\" width=\"16\" type=\"image/png\">{base}/static/icon-192.png</Image>"
+           "</OpenSearchDescription>\n")
+    return xml, 200, {"Content-Type": "application/opensearchdescription+xml; charset=utf-8"}
 
 
 @app.route("/")

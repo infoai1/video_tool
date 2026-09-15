@@ -1,4 +1,21 @@
 {% extends "base.html" %}
+{# Tells a search engine, and any assistant reading this page, that our search
+   is a plain GET at /search?q= -- there is no box for a crawler to type into. #}
+{% block head %}
+  <meta name="description" content="Every recorded talk of Maulana Wahiduddin Khan, transcribed in full and searchable: his answers, the verses and hadith he cites, and the moment he says each one.">
+  <link rel="canonical" href="https://{{ request.host }}/">
+  <link rel="alternate" type="text/plain" href="/llms.txt" title="How to use this site">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebSite",
+    "name":"Maulana Wahiduddin Khan","url":"https://{{ request.host }}/",
+    "description":"His recorded talks, transcribed in full and searchable by meaning.",
+    "inLanguage":["en","ur"],
+    "publisher":{"@type":"Organization","name":"Centre for Peace and Spirituality"},
+    "about":{"@type":"Person","name":"Maulana Wahiduddin Khan",
+             "sameAs":"https://en.wikipedia.org/wiki/Wahiduddin_Khan"},
+    "potentialAction":{"@type":"SearchAction",
+      "target":{"@type":"EntryPoint","urlTemplate":"https://{{ request.host }}/search?q={search_term_string}"},
+      "query-input":"required name=search_term_string"}}</script>
+{% endblock %}
 {% block body_class %}{{ 'landing-page' if landing else '' }}{% endblock %}
 {% block main_class %}{{ "landing" if landing }}{% endblock %}
 {% block content %}

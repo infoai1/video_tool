@@ -15,6 +15,8 @@
   <title>{% block title %}Maulana Wahiduddin Khan{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   {{ shell_css }}
+  <link rel="search" type="application/opensearchdescription+xml"
+        href="/opensearch.xml" title="Maulana Wahiduddin Khan">
   {% block head %}{% endblock %}
 </head>
 <body class="{% block body_class %}{% endblock %}">
