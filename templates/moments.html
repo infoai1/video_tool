@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ topic }} — Moments</title>
+<style>
+  :root{ --bg:#faf9f6; --card:#fff; --ink:#1c1b19; --muted:#6b6a65; --line:#e7e5df; --accent:#1d7a5f; --accent-bg:#e6f2ee; }
+  @media (prefers-color-scheme:dark){:root:not([data-theme=light]){ --bg:#121214; --card:#1d1d21; --ink:#ececec; --muted:#a3a29c; --line:#2c2c33; --accent:#5dcaa5; --accent-bg:#123a30; }}:root[data-theme=dark]{ --bg:#121214; --card:#1d1d21; --ink:#ececec; --muted:#a3a29c; --line:#2c2c33; --accent:#5dcaa5; --accent-bg:#123a30; }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;line-height:1.5}
+  .sticky{position:sticky;top:0;z-index:5;background:var(--bg)}
+  .pwrap{position:relative;background:#000;aspect-ratio:16/9;width:100%}
+  .pwrap iframe{width:100%;height:100%;border:0;display:block}
+  .cover{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+         gap:10px;background:#0b0b0b;color:#fff;cursor:pointer;text-align:center;padding:20px}
+  .cover .big{width:58px;height:58px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:22px}
+  .cover .t{font-size:15px;font-weight:600;max-width:85%}
+  .cover .s{font-size:12px;color:#bdbdbd}
+  .load{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);color:#fff;font-size:13px;background:rgba(0,0,0,.6);padding:6px 14px;border-radius:20px;display:none;z-index:2}
+  .load.on{display:block}
+  .card-over{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;
+             background:#0b0b0b;color:#fff;text-align:center;padding:20px;gap:6px}
+  .card-over .up{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#8fd9c1}
+  .card-over .vt{font-size:16px;font-weight:600;max-width:85%}
+  .nowbar{display:flex;align-items:center;gap:8px;padding:8px 14px;border-bottom:1px solid var(--line);background:var(--bg)}
+  .nowbar .n{font-size:12px;color:var(--muted);white-space:nowrap}
+  .nowbar .t{font-size:13px;font-weight:600;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .nowbar button{font:inherit;font-size:12px;padding:4px 10px;border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--ink);cursor:pointer}
+  .wrap{max-width:680px;margin:0 auto;padding:12px 14px 60px}
+  h1{font-size:20px;font-weight:600;margin:4px 0 2px}
+  .sub{color:var(--muted);font-size:13px;margin:0 0 12px}
+  .tx{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 14px;margin:0 0 14px;display:none}
+  .tx.show{display:block}
+  .tx .hd{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px}
+  .tl{display:flex;gap:9px;padding:3px 0;font-size:14px;cursor:pointer}
+  .tl .tt{flex:none;font-size:12px;font-weight:600;color:var(--accent);padding-top:2px}
+  .tl.cur{background:var(--accent-bg);border-radius:6px;padding-left:6px;margin-left:-6px}
+  .m{display:flex;align-items:center;gap:10px;padding:11px 4px;border-bottom:1px solid var(--line);cursor:pointer}
+  .m .num{flex:none;width:22px;font-size:13px;color:var(--muted);text-align:center}
+  .m.cur .num{color:var(--accent);font-weight:700}
+  .m .mt{font-size:14.5px;font-weight:600;margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .m.cur .mt{color:var(--accent)}
+  .m .mm{font-size:12px;color:var(--muted);margin:1px 0 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .m .mid{min-width:0;flex:1}
+  .m .sh{flex:none;font-size:15px;color:var(--muted);padding:6px}
+  .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:var(--ink);color:var(--bg);font-size:13px;padding:9px 16px;border-radius:20px;opacity:0;transition:opacity .2s;pointer-events:none}
+  .toast.show{opacity:1}
+</style>
+</head>
+<body>
+<div class="sticky">
+  <div class="pwrap">
+    <div id="ytplayer"></div>
+    <div class="load" id="load">Loading…</div>
+    <div class="cover" id="cover" onclick="begin()">
+      <div class="big">▶</div>
+      <div class="t">{{ topic }}</div>
+      <div class="s">{{ moments|length }} moments · plays through automatically</div>
+    </div>
+    <div class="card-over" id="card"><div class="up">Up next</div><div class="vt" id="cvt"></div></div>
+  </div>
+  <div class="nowbar">
+    <span class="n" id="pos">1 / {{ moments|length }}</span>
+    <span class="t" id="nowt">{{ moments[0].title }}</span>
+    <button onclick="nxt()">Skip ›</button>
+  </div>
+</div>
+<div class="wrap">
+  <h1>{{ topic }}</h1>
+  <p class="sub">Tap play once — it moves through every moment on its own.</p>
+
+
+  {% for m in moments %}
+  <div class="m" id="m{{ loop.index0 }}" onclick="jump({{ loop.index0 }})">
+    <span class="num">{{ loop.index }}</span>
+    <div class="mid">
+      <p class="mt">{{ m.title }}</p>
+      <p class="mm">{{ m.vtitle }} · {{ '%d:%02d'|format(m.a//60, m.a%60) }}</p>
+    </div>
+    <span class="sh" onclick="event.stopPropagation();share({{ loop.index0 }})" title="Share">⇪</span>
+  </div>
+  {% endfor %}
+
+  <div class="tx" id="tx"><div class="hd">Transcript — current moment (Roman Urdu)</div><div id="txl"></div></div>
+</div>
+<div class="toast" id="toast">Link copied</div>
+<script>
+function esc(s){return (s==null?'':String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+var PL={{ moments|tojson }};
+var i=0, player=null, ready=false, started=false, timer=null;
+var CLIP=110; /* fallback seconds per moment when no real end time */
+function endOf(m){ return (m.b && m.b>m.a) ? m.b : m.a + CLIP; }
+
+function begin(){
+  document.getElementById('cover').style.display='none';
+  started=true;
+  if(ready){ load(false); }
+  else{
+    var s=document.createElement('script'); s.src="https://www.youtube.com/iframe_api";
+    document.head.appendChild(s);
+  }
+}
+function onYouTubeIframeAPIReady(){
+  player=new YT.Player('ytplayer',{videoId:PL[0].yid,
+    playerVars:{rel:0,modestbranding:1,playsinline:1,autoplay:1,start:PL[0].a},
+    events:{onReady:function(){ready=true; load(false);},
+            onStateChange:function(e){ if(e.data===YT.PlayerState.ENDED) nxt(); }}});
+}
+function load(showCard){
+  var m=PL[i];
+  showLoad(true);
+  var go=function(){
+    if(player.getVideoData && player.getVideoData().video_id===m.yid) player.seekTo(m.a,true);
+    else player.loadVideoById({videoId:m.yid,startSeconds:m.a});
+    player.playVideo(); watch();
+  };
+  if(showCard){
+    var c=document.getElementById('card');
+    document.getElementById('cvt').textContent=m.title;
+    c.style.display='flex'; setTimeout(function(){c.style.display='none'; go();},1200);
+  } else go();
+  paint();
+}
+function watch(){
+  clearInterval(timer);
+  timer=setInterval(function(){
+    if(!ready) return;
+    var t=player.getCurrentTime(), m=PL[i];
+    highlight(t);
+    if(t>=endOf(m)) nxt();
+  },600);
+}
+function nxt(){ if(i<PL.length-1){ i++; load(true);} else { clearInterval(timer); } }
+function jump(idx){ if(!started){ begin(); } i=idx; if(ready) load(false); paint(); }
+function paint(){
+  var m=PL[i];
+  document.getElementById('pos').textContent=(i+1)+' / '+PL.length;
+  document.getElementById('nowt').textContent=m.title;
+  document.querySelectorAll('.m').forEach(function(el,idx){ el.classList.toggle('cur', idx===i); });
+  var tx=document.getElementById('tx'), tl=document.getElementById('txl');
+  if(m.transcript && m.transcript.length){
+    tl.innerHTML=m.transcript.map(function(l,li){
+      return '<div class="tl" id="tl'+li+'" onclick="seekLine('+l.t+')"><span class="tt">'+
+        Math.floor(l.t/60)+':'+('0'+(l.t%60)).slice(-2)+'</span><span>'+esc(l.x)+'</span></div>';
+    }).join('');
+    tx.classList.add('show');
+  } else tx.classList.remove('show');
+}
+function highlight(t){
+  var m=PL[i]; if(!m.transcript) return;
+  var cur=-1;
+  m.transcript.forEach(function(l,li){ if(t>=l.t) cur=li; });
+  m.transcript.forEach(function(l,li){
+    var el=document.getElementById('tl'+li); if(el) el.classList.toggle('cur', li===cur);
+  });
+}
+function showLoad(on){ var el=document.getElementById('load'); if(el) el.classList.toggle('on', !!on); }
+function seekLine(t){ if(ready){ showLoad(true); player.seekTo(t,true); player.playVideo(); window.scrollTo({top:0,behavior:'smooth'}); } }
+function share(idx){
+  var m=PL[idx], url='https://youtu.be/'+m.yid+'?t='+m.a;
+  var done=function(){var el=document.getElementById('toast');el.classList.add('show');setTimeout(function(){el.classList.remove('show')},1400);};
+  if(navigator.share){navigator.share({title:m.title,url:url}).catch(function(){});}
+  else if(navigator.clipboard){navigator.clipboard.writeText(url).then(done,done);}
+  else done();
+}
+paint();
+</script>
+</body>
+</html>

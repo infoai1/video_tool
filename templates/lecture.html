@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ title }} — Smart summary</title>
+<style>
+  :root{ --bg:#faf9f6; --card:#fff; --ink:#1c1b19; --muted:#6b6a65; --line:#e7e5df;
+         --accent:#1d7a5f; --accent-bg:#e6f2ee; --chip:#eef4f1; }
+  @media (prefers-color-scheme:dark){:root:not([data-theme=light]){ --bg:#141416; --card:#1e1e22; --ink:#ececec; --muted:#a3a29c; --line:#33333a;
+           --accent:#5dcaa5; --accent-bg:#123a30; --chip:#183029; }}:root[data-theme=dark]{ --bg:#141416; --card:#1e1e22; --ink:#ececec; --muted:#a3a29c; --line:#33333a;
+           --accent:#5dcaa5; --accent-bg:#123a30; --chip:#183029; }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;line-height:1.62}
+  .player-wrap{position:sticky;top:0;z-index:5;background:#000;aspect-ratio:16/9;width:100%}
+  .player-wrap iframe{width:100%;height:100%;border:0;display:block}
+  .wrap{max-width:680px;margin:0 auto;padding:16px 18px 60px}
+  h1{font-size:20px;font-weight:600;margin:14px 0 4px}
+  .meta{color:var(--muted);font-size:13px;margin:0 0 14px}
+  .tabs{display:flex;gap:8px;margin:0 0 20px}
+  .tab{font-size:13px;font-weight:500;padding:7px 14px;border-radius:20px;border:1px solid var(--line);
+       background:transparent;color:var(--ink);cursor:pointer}
+  .tab.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .tab.soon{color:var(--muted);cursor:default}
+  .sec{padding:14px 0;border-top:1px solid var(--line)}
+  .sec:first-of-type{border-top:0}
+  .chip{display:inline-flex;align-items:center;gap:5px;font-size:13px;font-weight:600;color:var(--accent);
+        background:var(--chip);border:0;border-radius:8px;padding:3px 10px;cursor:pointer;margin-bottom:7px}
+  .chip:active{transform:scale(.97)}
+  .stitle{font-size:16px;font-weight:600;margin:0 0 4px;cursor:pointer}
+  ul{margin:6px 0 0;padding-left:20px}
+  li{margin:3px 0}
+  .share{margin-top:9px}
+  .share button{font:inherit;font-size:12px;font-weight:500;color:var(--muted);background:transparent;
+       border:1px solid var(--line);border-radius:9px;padding:5px 11px;cursor:pointer}
+  .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:var(--ink);
+         color:var(--bg);font-size:13px;padding:9px 16px;border-radius:20px;opacity:0;
+         transition:opacity .2s;pointer-events:none}
+  .toast.show{opacity:1}
+</style>
+</head>
+<body>
+<div class="player-wrap"><div id="ytplayer"></div></div>
+<div class="wrap">
+  <h1>{{ title }}</h1>
+  <p class="meta">{{ sections|length }} topics · tap a time to jump the video</p>
+  <div class="tabs">
+    <button class="tab on">Topic-wise</button>
+    <button class="tab soon" title="Coming soon">Q&amp;A-wise · soon</button>
+  </div>
+
+  {% for s in sections %}
+  <div class="sec" id="s{{ loop.index }}">
+    <button class="chip" onclick="seek({{ s.a }})">▶ {{ '%d:%02d'|format(s.a//60, s.a%60) }}–{{ '%d:%02d'|format(s.b//60, s.b%60) }}</button>
+    <div class="stitle" onclick="seek({{ s.a }})">{{ loop.index }}. {{ s.title }}</div>
+    {% if s.summary %}<ul>{% for b in s.summary %}<li>{{ b }}</li>{% endfor %}</ul>{% endif %}
+    <div class="share"><button onclick="share({{ s.a }},'{{ s.title|e }}')">Share this moment</button></div>
+  </div>
+  {% endfor %}
+</div>
+<div class="toast" id="toast">Link copied</div>
+
+<script>
+var YID="{{ yid }}", player, ready=false, pending=null;
+function onYouTubeIframeAPIReady(){
+  player=new YT.Player('ytplayer',{videoId:YID,playerVars:{rel:0,modestbranding:1},
+    events:{onReady:function(){ready=true; if(pending!=null){player.seekTo(pending,true);player.playVideo();pending=null;}}}});
+}
+function seek(t){
+  if(ready){ player.seekTo(t,true); player.playVideo(); }
+  else pending=t;
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+function share(t,title){
+  var url=location.origin+location.pathname+'?t='+t;
+  var done=function(){var el=document.getElementById('toast');el.classList.add('show');
+    setTimeout(function(){el.classList.remove('show')},1400);};
+  if(navigator.share){navigator.share({title:title,url:url}).catch(function(){});}
+  else if(navigator.clipboard){navigator.clipboard.writeText(url).then(done,done);}
+  else done();
+}
+(function(){var t=parseInt(new URLSearchParams(location.search).get('t')||'0',10); if(t)pending=t;
+  var s=document.createElement('script');s.src="https://www.youtube.com/iframe_api";document.head.appendChild(s);})();
+</script>
+</body>
+</html>

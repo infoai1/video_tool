@@ -1,21 +1,156 @@
 {% extends "base.html" %}
-{% block title %}Videos — Roman Urdu Transcripts{% endblock %}
+{% block head %}
+  {% if seo_description %}<meta name="description" content="{{ seo_description }}">{% endif %}
+  {% if canonical %}<link rel="canonical" href="{{ canonical }}">{% endif %}
+{% endblock %}
+{% block title %}Videos — Maulana Wahiduddin Khan{% endblock %}
+{% block main_class %}vwmain{% endblock %}
 {% block content %}
-<h1>Videos</h1>
+<style>
+/* Watch & Read: the page opens on a lecture ready to play, its citations as
+   chapters under the player, an "Up next" rail beside it; then filter chips
+   and a grid of thumbnail cards. Every number is live from roman.db,
+   clips.db and refs.db. */
+main.vwmain{max-width:none;padding:0}
+.vw{--ink:var(--fg);--surface:var(--card);max-width:1240px;margin:0 auto;padding:12px 22px 40px}
+.vw-stage{display:grid;grid-template-columns:1fr;gap:16px}
+@media (min-width:980px){.vw-stage{grid-template-columns:minmax(0,1fr) 340px;gap:24px}}
+.vw-player{border-radius:18px;overflow:hidden;border:1px solid var(--line);background:var(--surface);box-shadow:var(--shadow)}
+.vw-scr{position:relative;aspect-ratio:16/9;background:#12100c;cursor:pointer;border:0;padding:0;width:100%;display:block}
+.vw-scr img{width:100%;height:100%;object-fit:cover;display:block;opacity:.92}
+.vw-scr iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+.vw-scr .pl{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:64px;height:64px;border-radius:50%;background:rgba(255,255,255,.94);color:#12100c;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 24px rgba(0,0,0,.35)}
+.vw-scr .pl svg{width:22px;height:22px;fill:currentColor}
+.vw-scr .ttl{position:absolute;left:18px;right:110px;bottom:16px;color:#fff;text-align:left;text-shadow:0 1px 6px rgba(0,0,0,.7)}
+.vw-scr .ttl .e{font-size:11.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;opacity:.85}
+.vw-scr .ttl h1{margin:4px 0 0;font-size:clamp(18px,2.4vw,26px);line-height:1.15;font-weight:700;letter-spacing:-.01em;color:#fff}
+.vw-scr .d{position:absolute;right:12px;bottom:14px;font-size:12px;font-weight:600;color:#fff;background:rgba(0,0,0,.62);border-radius:6px;padding:3px 7px;font-variant-numeric:tabular-nums}
+.vw-under{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;padding:12px 16px 4px}
+.vw-under .m{font-size:13.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+.vw-acts{margin-left:auto;display:flex;gap:6px}
+.vw-acts a,.vw-acts button{white-space:nowrap;display:inline-flex;align-items:center;gap:6px;height:36px;padding:0 12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font:inherit;font-size:13px;font-weight:600;cursor:pointer;text-decoration:none}
+.vw-acts a:hover,.vw-acts button:hover{border-color:var(--accent);text-decoration:none}
+.vw-acts svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.vw-chaps{display:flex;gap:8px;padding:10px 16px 14px;overflow-x:auto;scrollbar-width:none}.vw-chaps::-webkit-scrollbar{display:none}
+.vw-ch{flex:none;display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 11px;border-radius:999px;background:var(--accent-soft);color:var(--accent);font-size:12.5px;font-weight:600;border:0;font-family:inherit;cursor:pointer;white-space:nowrap}
+.vw-ch i{font-style:normal;font-weight:500;color:var(--muted)}
+.vw-ch:hover{filter:brightness(1.05)}
+.vw-ch.lbl{background:none;color:var(--muted);padding-left:0;font-weight:700;letter-spacing:.08em;text-transform:uppercase;font-size:11px;cursor:default}
+.vw-rail{border:1px solid var(--line);border-radius:18px;background:var(--surface);display:flex;flex-direction:column;overflow:hidden}
+.vw-rail h4{margin:0;padding:14px 16px 8px;font-size:11.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);display:flex;justify-content:space-between;align-items:baseline}
+.vw-rail h4 a{color:var(--accent);letter-spacing:0;text-transform:none;font-size:12.5px;text-decoration:none}
+.vw-up{display:flex;gap:11px;padding:9px 12px;border-top:1px solid var(--line);color:var(--ink);text-decoration:none}
+.vw-up:hover{background:var(--bg);text-decoration:none}
+.vw-up .th{position:relative;width:118px;flex:none;aspect-ratio:16/9;border-radius:8px;overflow:hidden;background:var(--line)}
+.vw-up .th img{width:100%;height:100%;object-fit:cover;display:block;opacity:.9}
+.vw-up .th .d{position:absolute;right:5px;bottom:5px;font-size:10.5px;font-weight:600;color:#fff;background:rgba(0,0,0,.62);border-radius:5px;padding:1px 5px}
+.vw-up>span:last-child{min-width:0}
+.vw-up .t{font-weight:600;font-size:13.5px;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.vw-up .m{font-size:12px;color:var(--muted);margin-top:4px}
+@media (max-width:979px){.vw-rail{border:0;background:none;border-radius:0}.vw-rail h4{padding:6px 0 8px}.vw-ups{display:flex;gap:10px;overflow-x:auto;scrollbar-width:none}.vw-ups::-webkit-scrollbar{display:none}.vw-up{flex:0 0 78%;flex-direction:column;gap:6px;padding:0;border:0}.vw-up .th{width:100%}}
+.vw-filters{display:flex;flex-wrap:wrap;gap:8px;margin:28px 0 14px;align-items:center}
+.vw-chip{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 13px;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font-size:13.5px;font-weight:500;text-decoration:none;white-space:nowrap}
+.vw-chip .cc{color:var(--muted);font-variant-numeric:tabular-nums}
+.vw-chip:hover{border-color:var(--accent);text-decoration:none}
+.vw-chip.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}.vw-chip.on .cc{color:inherit;opacity:.7}
+.vw-search{display:flex;align-items:center;gap:8px;margin-left:auto;width:min(100%,340px);background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:3px 3px 3px 14px}
+.vw-search:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.vw-search svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;color:var(--muted);flex:none}
+.vw-search input{flex:1;min-width:0;border:0;background:transparent;color:var(--ink);font:inherit;font-size:14px;height:32px;outline:none;-webkit-appearance:none}
+.vw-search button{flex:none;width:32px;height:32px;border:0;border-radius:999px;background:var(--accent);color:var(--accent-ink);cursor:pointer;display:inline-flex;align-items:center;justify-content:center}
+.vw-search button svg{color:var(--accent-ink);width:15px;height:15px}
+.vw-cnt{font-size:13px;color:var(--muted);width:100%}
+.vw-cnt a{color:var(--accent);font-weight:600;text-decoration:none}
+.vw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:16px 14px}
+@media (max-width:560px){.vw-grid{grid-template-columns:1fr 1fr;gap:12px 10px}}
+.vw-card{display:block;color:var(--ink);text-decoration:none}
+.vw-card .th,.vw-card .t,.vw-card .m{display:block}
+.vw-card .th{position:relative;aspect-ratio:16/9;border-radius:12px;overflow:hidden;background:var(--line);border:1px solid var(--line)}
+.vw-card .th img{width:100%;height:100%;object-fit:cover;display:block;opacity:.92;transition:transform .3s}
+.vw-card:hover .th img{transform:scale(1.03)}
+.vw-card .th .pl{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.94);color:#12100c;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .18s}
+.vw-card:hover .th .pl{opacity:1}.vw-card .th .pl svg{width:12px;height:12px;fill:currentColor}
+.vw-card .th .d{position:absolute;right:8px;bottom:8px;font-size:11px;font-weight:600;color:#fff;background:rgba(0,0,0,.62);border-radius:6px;padding:2px 6px;font-variant-numeric:tabular-nums}
+.vw-card .t{margin-top:9px;font-weight:600;font-size:14.5px;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+.vw-card .m{margin-top:4px;font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+.vw-more{display:flex;justify-content:center;margin-top:22px}
+.vw-more a{display:inline-flex;align-items:center;min-height:40px;padding:0 18px;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:var(--accent);font-weight:600;font-size:14px;text-decoration:none}
+.vw-more a:hover{border-color:var(--accent)}
+.vw-empty{padding:26px 2px;color:var(--muted)}
+@media (prefers-reduced-motion:reduce){.vw-card .th img{transition:none}}
+</style>
 {% if no_store %}
-  <div class="notice">
-    <p>The transcript store hasn't been built yet. Run <code>python cli.py ingest</code> then <code>python cli.py transliterate</code>.</p>
-  </div>
-{% elif videos %}
-  <ul class="vlist">
-    {% for v in videos %}
-    <li>
-      <a href="{{ url_for('video', video_id=v.id) }}">{{ v.title or 'Untitled video' }}</a>
-      <span class="cov">{{ v.done }}/{{ v.segments }} lines</span>
-    </li>
-    {% endfor %}
-  </ul>
+<div class="notice"><p>The transcript store hasn't been built yet.</p></div>
 {% else %}
-  <p class="hint">No videos ingested yet.</p>
+{% set play = '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>' %}
+<div class="vw">
+{% if hero %}
+<div class="vw-stage">
+  <div class="vw-player">
+    <button type="button" class="vw-scr" id="vw-scr" data-yt="{{ hero.yt }}" onclick="vwPlay(0)" aria-label="Play {{ hero.title }}">
+      {% if hero.yt %}<img src="https://i.ytimg.com/vi/{{ hero.yt }}/hqdefault.jpg" alt="">{% endif %}
+      <span class="pl">{{ play|safe }}</span>
+      <span class="ttl"><span class="e">{{ hero_label }}</span><h1>{{ hero.title }}</h1></span>
+      {% if hero.dur %}<span class="d">{{ hero.dur }}</span>{% endif %}
+    </button>
+    <div class="vw-under">
+      <span class="m">{% if hero.dur %}{{ hero.dur }} · {% endif %}{{ hero.refs }} reference{{ '' if hero.refs == 1 else 's' }} · {{ hero.clips }} clip{{ '' if hero.clips == 1 else 's' }}{% if hero.pct %} · transcript{% endif %}</span>
+      <span class="vw-acts">
+        <a href="https://wa.me/?text={{ (hero.title ~ ' — ' ~ hero.url)|urlencode }}" target="_blank" rel="noopener" title="Share on WhatsApp"><svg viewBox="0 0 24 24"><path d="M4 20l1.3-3.9A8 8 0 1 1 8 18.6z"/><path d="M9 9.5c.3 2.2 2.3 4.2 4.5 4.5l1.2-1.2 1.8.9-.4 1.6c-3.6.3-7.6-3.7-7.3-7.3l1.6-.4.9 1.8z"/></svg>WhatsApp</a>
+        <button type="button" onclick="vwCopy(this)" data-url="{{ hero.url }}" title="Copy link"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg>Copy link</button>
+        <a href="{{ url_for('video', video_id=hero.id) }}" title="Read along with the transcript"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 12h4M13 12h4M7 15.5h10"/></svg>Transcript</a>
+      </span>
+    </div>
+    {% if chapters %}
+    <div class="vw-chaps"><span class="vw-ch lbl">He cites</span>
+      {% for c in chapters %}<button type="button" class="vw-ch" onclick="vwPlay({{ c.t }})" title="Play from {{ c.hhmm }}">{{ c.hhmm }} <i>· {{ c.label }}</i></button>{% endfor %}
+      <a class="vw-ch" href="/refs/lecture/{{ hero.yt }}"><i>all {{ hero.refs }} &rarr;</i></a>
+    </div>
+    {% endif %}
+  </div>
+  <aside class="vw-rail"><h4>Up next <a href="/videos?sort=clips">Most clipped &rarr;</a></h4>
+    <div class="vw-ups">
+    {% for v in upnext %}
+    <a class="vw-up" href="/videos?v={{ v.id }}"><span class="th">{% if v.yt %}<img loading="lazy" src="https://i.ytimg.com/vi/{{ v.yt }}/hqdefault.jpg" alt="">{% endif %}{% if v.dur %}<span class="d">{{ v.dur }}</span>{% endif %}</span>
+      <span><span class="t">{{ v.title }}</span><span class="m">{% if v.year %}{{ v.year }} · {% endif %}{{ v.clips }} clips{% if v.refs %} · {{ v.refs }} refs{% endif %}</span></span></a>
+    {% endfor %}
+    </div>
+  </aside>
+</div>
+{% endif %}
+
+<div class="vw-filters">
+  {% for f in filters %}<a class="vw-chip{% if f.on %} on{% endif %}" href="{{ f.href }}">{{ f.label }}{% if f.count is not none %} <span class="cc">{{ f.count }}</span>{% endif %}</a>{% endfor %}
+  <form class="vw-search" role="search" method="get" action="/videos">
+    {% if era %}<input type="hidden" name="era" value="{{ era }}">{% endif %}
+    <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.4-3.4"/></svg>
+    <input type="search" name="q" value="{{ q }}" autocomplete="off" placeholder="Find a lecture by title&hellip;" aria-label="Find a lecture">
+    <button type="submit" aria-label="Search"><svg viewBox="0 0 24 24"><path d="M5 12h13M13 6l6 6-6 6"/></svg></button>
+  </form>
+  <span class="vw-cnt">{{ list_note }} · <a href="/search{% if q %}?q={{ q|urlencode }}{% endif %}">search inside the transcripts &rarr;</a></span>
+</div>
+{% if items %}
+<div class="vw-grid">
+{% for v in items %}
+<a class="vw-card" href="/videos?v={{ v.id }}">
+  <span class="th">{% if v.yt %}<img loading="{{ 'eager' if loop.index <= 8 else 'lazy' }}" src="https://i.ytimg.com/vi/{{ v.yt }}/hqdefault.jpg" alt="">{% endif %}<span class="pl">{{ play|safe }}</span>{% if v.dur %}<span class="d">{{ v.dur }}</span>{% endif %}</span>
+  <span class="t">{{ v.title }}</span>
+  <span class="m">{% if v.year %}{{ v.year }}{% endif %}{% if v.refs %} · {{ v.refs }} refs{% endif %}{% if v.clips %} · {{ v.clips }} clips{% endif %}</span>
+</a>
+{% endfor %}
+</div>
+{% if more_href %}<div class="vw-more"><a href="{{ more_href }}">Show {{ more_n }} more &rarr;</a></div>{% endif %}
+{% else %}
+<p class="vw-empty">No lecture title matches those words &mdash; try fewer, or <a href="/search?q={{ q|urlencode }}">search inside the transcripts</a>.</p>
+{% endif %}
+</div>
+<script>
+window.vwPlay=function(t){var s=document.getElementById('vw-scr');if(!s)return;var y=s.getAttribute('data-yt');if(!y)return;
+  s.innerHTML='<iframe src="https://www.youtube.com/embed/'+y+'?start='+(t||0)+'&autoplay=1&playsinline=1&rel=0" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>';
+  s.style.cursor='default';s.onclick=null;
+  if(window.innerWidth<980){s.scrollIntoView({behavior:'smooth',block:'start'});}};
+window.vwCopy=function(b){var u=b.getAttribute('data-url');var done=function(){var k=b.innerHTML;b.lastChild.textContent='Copied';setTimeout(function(){b.innerHTML=k;},1600);};
+  if(navigator.clipboard){navigator.clipboard.writeText(u).then(done,function(){prompt('Copy this link',u);});}else{prompt('Copy this link',u);}};
+</script>
 {% endif %}
 {% endblock %}

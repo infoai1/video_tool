@@ -7,7 +7,14 @@ import datetime
 import hmac
 import json
 import os
+import time
+import sys
 import uuid
+from urllib.parse import urlencode
+
+import sqlite3
+import re as _re
+_re_mwk = _re.compile(r"\s*(by\s+)?Maulana\s+Wahiduddin\s+Khan\s*", _re.I)
 
 import config
 import db
@@ -15,15 +22,46 @@ import export
 import jobs
 import library
 import search
+import seo
+import source
 import transcribe
 import transliterate
 from flask import (Flask, abort, jsonify, redirect, render_template, request,
-                   send_file, session, url_for)
+                   send_file, send_from_directory, session, url_for)
+from markupsafe import Markup
 from werkzeug.utils import secure_filename
+
+# The header, footer and phone tab bar are shared with the clips app so every
+# page of the site wears the same shell (shukr-app/shell.py).
+sys.path.insert(0, os.environ.get("VIDEO_TOOL_SHELL_DIR", "/root/shukr-app"))
+try:
+    import situations as _situations
+except Exception:  # noqa: BLE001 -- ships with the clips app; the page works without it
+    _situations = None
+import start_here
+try:
+    import shell as _shell
+except Exception:  # noqa: BLE001 - a missing shell must not take the site down
+    _shell = None
 
 app = Flask(__name__)
 app.secret_key = config.SECRET_KEY
 app.config["MAX_CONTENT_LENGTH"] = config.MAX_UPLOAD_MB * 1024 * 1024
+# Static files (CSS/JS/icons) were sent with Cache-Control: no-cache -- Flask and
+# Werkzeug's own default when SEND_FILE_MAX_AGE_DEFAULT is unset -- so the browser
+# re-validated every one of them on every single page load. An hour lets a repeat
+# visit skip that round trip entirely; any deploy still reaches returning visitors
+# within the hour, and ETags still catch changes sooner if a visitor reloads.
+app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 3600
+# The templates carry their stylesheets inline, re-sent on every navigation. This
+# keeps them inline the first time a visitor is sent them, warms the browser cache
+# afterwards, and links to the cached file on every page after that -- sharing one
+# directory with the clips app so a bundle is fetched once for the whole site.
+try:
+    import assetcache as _assetcache
+    _assetcache.install(app)
+except Exception:  # noqa: BLE001 - caching must never take the site down
+    pass
 # 2026-09-02 audit: cookie hardening. Secure flag is switched on by the env file
 # (VIDEO_TOOL_COOKIE_SECURE=1) so the plain-http test client keeps working.
 app.config.update(
@@ -40,8 +78,8 @@ _LOGIN_MAX, _LOGIN_WINDOW = 5, 600
 
 
 def _client_ip():
-    fwd = request.headers.get("X-Forwarded-For", "")
-    return (fwd.split(",")[0].strip() if fwd else "") or request.remote_addr or "?"
+    # X-Real-IP is set by nginx and cannot be spoofed; X-Forwarded-For can be.
+    return request.headers.get("X-Real-IP") or request.remote_addr or "?"
 
 # Migrate the store in place on startup so newly-added columns (uploaded_at,
 # audio_path, word_tokens) exist before any query touches them. Idempotent.
@@ -51,7 +89,16 @@ if db.exists():
 # Auth is on only when a credential is configured (auth.json / env), so local
 # dev and tests aren't gated.
 AUTH_ENABLED = bool(config.AUTH_USER and config.AUTH_PASSWORD)
-_OPEN_ENDPOINTS = {"login", "static", "health"}
+# Owner decision 2026-09-05: the site is public. Seekers search, read and play
+# without an account; only the operator's pages and the APIs that queue work
+# or write to the library need the login.
+_OPERATOR_ENDPOINTS = {
+    "upload_page", "uploads_page", "dashboard", "usage_page", "library_page",
+    "api_transcribe", "api_upload_audio", "api_upload_cookies", "api_sync_channel",
+    "api_romanize_video", "api_romanize_all", "api_job", "api_jobs",
+    "api_romanize",  # owner 2026-09-05: the LLM filler is not for visitors
+    "api_save_video", "api_save_segment", "api_bookmark_delete", "api_bookmark_tag",
+}
 
 
 def _eq(a, b):
@@ -63,11 +110,37 @@ def _eq(a, b):
 def _require_login():
     if not AUTH_ENABLED or session.get("user"):
         return None
-    if request.endpoint in _OPEN_ENDPOINTS:
+    if request.endpoint not in _OPERATOR_ENDPOINTS:
         return None
     if request.path.startswith("/api/"):
         return jsonify({"error": "authentication required"}), 401
     return redirect(url_for("login", next=request.path))
+
+
+@app.context_processor
+def _who():
+    """`operator` is true for the signed-in owner (or always when no credential
+    is configured, e.g. tests); templates hide upload/save/dashboard controls
+    from everyone else. Also hands base.html the shared shell pieces."""
+    signed = bool(session.get("user"))
+    operator = (not AUTH_ENABLED) or signed
+    ctx = {"operator": operator, "auth_on": AUTH_ENABLED,
+           "shell_css": "", "shell_header": "", "shell_footer": "", "shell_tabbar": ""}
+    if _shell is not None:
+        q = (request.args.get("q") or "").strip()
+        if search.youtube_id(q):
+            q = ""
+        ep = request.endpoint or ""
+        active = {"index": "home", "videos": "videos"}.get(ep, "")
+        ctx.update(
+            shell_css=Markup(_shell.CSS),
+            shell_header=Markup(_shell.header(
+                q=q, active=active, operator=operator, signed_in=signed, auth_on=AUTH_ENABLED,
+                search_open=bool(q), hide_search=(ep == "index" and not q))),
+            shell_footer=Markup(_shell.footer()),
+            shell_tabbar=Markup(_shell.tabbar(active)),
+        )
+    return ctx
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -91,8 +164,9 @@ def login():
             session["user"] = u
             session.permanent = True
             _LOGIN_FAILS.pop(ip, None)
-            dest = request.args.get("next") or url_for("index")
-            return redirect(dest if dest.startswith("/") else url_for("index"))
+            # Owner decision 2026-09-02: every login lands on the main page,
+            # never back on whatever page happened to trigger the login.
+            return redirect(url_for("index"))
         _LOGIN_FAILS[ip] = (fails + 1, since)
         error = "Wrong username or password."
     return render_template("login.html", error=error)
@@ -149,12 +223,68 @@ def _landing_context_uncached():
         tags = library.all_tags(conn)[:12]
         recent = library.list_romanized(conn, limit=6)
         saved = conn.execute("SELECT COUNT(*) FROM bookmarks").fetchone()[0]
+        try:
+            start = [dict(u) for u in start_here.pick()]
+            for u in start:  # the year he answered, shown on the landing rows when known
+                r = conn.execute("SELECT year FROM videos WHERE youtube_url LIKE ? LIMIT 1", ("%" + u["yid"] + "%",)).fetchone()
+                u["year"] = r[0] if r and r[0] else ""
+        except Exception:  # noqa: BLE001 -- the hero must never depend on the cards
+            start = []
     finally:
         conn.close()
     return {
         "videos": videos, "romanized_pct": pct, "saved": saved,
         "playlists": tags, "recent": recent, "topics": _SUGGESTED_TOPICS,
+        "situations": _situations.featured() if _situations else [],
+        "start": start, "counts": _section_counts(),
     }
+
+
+_COUNTS_CACHE = {"at": 0.0, "val": None}
+
+
+def _section_counts():
+    """Numbers on the landing page's section tiles, refreshed once a day."""
+    now = datetime.datetime.now().timestamp()
+    if _COUNTS_CACHE["val"] is None or now - _COUNTS_CACHE["at"] > 86400:
+        c = start_here.counts()
+        c["situations"] = len(_situations.SITUATIONS) if _situations else 0
+        _COUNTS_CACHE.update(at=now, val=c)
+    return _COUNTS_CACHE["val"]
+
+
+@app.route("/privacy")
+def privacy():
+    return render_template("privacy.html")
+
+
+@app.route("/sw.js")
+def _sw():
+    # Served from root so the worker's scope covers the whole site.
+    return send_from_directory(app.static_folder, "sw.js", mimetype="application/javascript")
+
+
+def _indexnow_key():
+    """Our IndexNow key, stored in static/ as indexnow-<key>.txt."""
+    try:
+        for name in sorted(os.listdir(app.static_folder)):
+            if name.startswith("indexnow-") and name.endswith(".txt"):
+                with open(os.path.join(app.static_folder, name), encoding="utf-8") as f:
+                    return f.read().strip()
+    except OSError:
+        pass
+    return ""
+
+
+INDEXNOW_KEY = _indexnow_key()
+if INDEXNOW_KEY:
+    # Bing, Yandex and the rest fetch this to check that a submission from
+    # scripts/indexnow.py really came from this site. They require it at the
+    # root, and they only accept URLs from the directory it sits in -- so the
+    # root is also the only place from which we can submit the whole site.
+    @app.route(f"/{INDEXNOW_KEY}.txt")
+    def _indexnow():
+        return INDEXNOW_KEY, 200, {"Content-Type": "text/plain; charset=utf-8"}
 
 
 @app.route("/")
@@ -167,10 +297,17 @@ def index():
     active_job = None
     roman_terms, urdu_terms = [], []
     year_counts, undated_count, year_sel, sort = [], 0, "", ""
+    total_found = 0
     year_counts_d = {}
     saved_segments = set()
     landing = None
     if q:
+        # One box, one engine: a question or a word goes to the meaning search
+        # (/clips/search), which answers with his own Q&A first. A pasted
+        # YouTube link still opens that lecture's transcript here, and
+        # mode=words keeps the exact-word transcript search reachable.
+        if not search.youtube_id(q) and (request.args.get("mode") or "") != "words":
+            return redirect("/clips/search?" + urlencode({"q": q}))
         # Writable: search caches the query's Urdu transliteration on first use.
         conn = db.connect()
         try:
@@ -180,6 +317,9 @@ def index():
                 if vid:
                     return redirect(url_for("video", video_id=vid))
                 youtube_not_found = True
+                if AUTH_ENABLED and not session.get("user"):
+                    # visitors: the clips app explains, notes the request and pings the owner
+                    return redirect("/search?" + urlencode({"q": q}))
                 active = jobs.active_for_url(conn, q)
                 active_job = active[0] if active else None
             else:
@@ -202,14 +342,15 @@ def index():
                 elif sort == "old":
                     hits = sorted(hits, key=lambda h: (h.get("year") or 9999))
                 year_counts = sorted(year_counts_d.items(), key=lambda kv: kv[0], reverse=True)
-                total_found = len(all_hits)
+                n_all = len(all_hits)
+                total_found = len(hits)  # after the year filter: the number the page claims
                 hits = hits[:60]
                 roman_terms, urdu_terms = search.query_highlight_terms(conn, q)
                 saved_segments = library.saved_segment_set(
                     conn, [h["segment_id"] for h in hits])
                 try:  # best-effort search logging (never break search)
                     conn.execute("INSERT INTO search_log (q, results, at) VALUES (?, ?, ?)",
-                                 (q, total_found, datetime.datetime.utcnow().isoformat()))
+                                 (q, n_all, datetime.datetime.utcnow().isoformat()))
                     conn.commit()
                 except Exception:
                     pass
@@ -223,20 +364,249 @@ def index():
         roman_terms=roman_terms, urdu_terms=urdu_terms,
         saved_segments=saved_segments, landing=landing,
         year_counts=year_counts, undated_count=undated_count, year_sel=year_sel, sort=sort,
+        total_found=total_found,
     )
+
+
+# The lecture list is counted across every one of the ~650,000 transcript
+# segments: close to half a second of database work, repeated on every visit,
+# for numbers that only change when a transcript finishes. Keep the last answer
+# and reuse it until one of the databases is actually written to. While a
+# transcription run is writing constantly, refresh at most every _LIB_MIN_AGE
+# seconds, so a busy worker cannot drag the page back down to half a second.
+_LIB_CACHE = {"key": None, "at": 0.0, "val": None}
+_LIB_MIN_AGE = 30.0
+
+
+def _db_key(*paths):
+    """A fingerprint that changes exactly when one of these files is written."""
+    out = []
+    for path in paths:
+        try:
+            st = os.stat(path)
+            out.append((st.st_mtime_ns, st.st_size))
+        except OSError:
+            out.append(None)
+    return tuple(out)
+
+
+def _library_counts():
+    """Per-lecture segment, clip and reference counts. Cached; see _LIB_CACHE."""
+    key = _db_key(config.DB_PATH, CLIP_STUDY_CLIPS, CLIP_STUDY_REFS)
+    now = time.time()
+    cache = _LIB_CACHE
+    if cache["val"] is not None and (cache["key"] == key or now - cache["at"] < _LIB_MIN_AGE):
+        return cache["val"]
+    conn = db.connect_ro()
+    try:
+        rows = conn.execute(
+            """
+            SELECT v.id, v.title, v.youtube_url, v.year, v.source_video_id,
+                   COUNT(s.id), COUNT(s.roman_text), MAX(s.start_time)
+            FROM videos v LEFT JOIN segments s ON s.video_id = v.id
+            WHERE COALESCE(v.content_type, '') != 'omit'
+            GROUP BY v.id
+            """).fetchall()
+    finally:
+        conn.close()
+    clips_by_ann, refs_by_yid = {}, {}
+    try:
+        d = sqlite3.connect(f"file:{CLIP_STUDY_CLIPS}?mode=ro", uri=True)
+        clips_by_ann = dict(d.execute("SELECT video_id, COUNT(*) FROM clips GROUP BY video_id").fetchall())
+        d.close()
+    except Exception:  # noqa: BLE001 -- clip counts are a nicety
+        pass
+    try:
+        d = sqlite3.connect(f"file:{CLIP_STUDY_REFS}?mode=ro", uri=True)
+        refs_by_yid = dict(d.execute("SELECT yid, COUNT(*) FROM refs WHERE ok=1 GROUP BY yid").fetchall())
+        d.close()
+    except Exception:  # noqa: BLE001
+        pass
+    val = (rows, clips_by_ann, refs_by_yid)
+    cache.update(key=key, at=now, val=val)
+    return val
 
 
 @app.route("/videos")
 def videos():
+    """Watch & Read: the page opens on a lecture ready to play -- today's pick
+    from the lectures most clips were cut from, or ?v=<id> -- with the verses
+    and hadith he cites in it as chapters under the player and an 'Up next'
+    rail; then filter chips (?era, ?sort=clips, ?dur=short, ?q) and a grid of
+    thumbnail cards paged 48 at a time (?offset). Counts are live from roman.db,
+    clips.db and refs.db."""
     if not db.exists():
         return render_template("videos.html", videos=None, no_store=True)
-    conn = db.connect_ro()
-    try:
-        vids = search.list_videos(conn)
-    finally:
-        conn.close()
-    return render_template("videos.html", videos=vids, no_store=False)
+    a = request.args
+    q = (a.get("q") or "").strip()
+    era = (a.get("era") or "").strip()
+    sort = (a.get("sort") or "").strip()
+    dur = (a.get("dur") or "").strip()
+    v_sel = a.get("v", type=int)
+    offset = max(0, a.get("offset", type=int) or 0)
+    rows, clips_by_ann, refs_by_yid = _library_counts()
 
+    def _clean(t):
+        t = (t or "").strip()
+        t = _re_mwk.sub(" ", t)
+        t = _re.sub(r"\s*[|\-–—]\s*[|\-–—]\s*", " · ", t)
+        t = _re.sub(r"\s*\|\s*", " · ", t)
+        t = _re.sub(r"\s{2,}", " ", t).strip(" ·-–—,|")
+        return t or "Untitled lecture"
+
+    def _dur(secs):
+        secs = int(secs or 0)
+        if not secs:
+            return ""
+        return f"{secs // 3600}:{(secs % 3600) // 60:02d}" if secs >= 3600 else f"{secs // 60}:{secs % 60:02d}"
+
+    vids = []
+    for r in rows:
+        yr = int(r[3]) if r[3] is not None and str(r[3]).isdigit() else None
+        yt = search.youtube_id(r[2]) or ""
+        vids.append({
+            "id": r[0], "title": _clean(r[1]), "yt": yt, "year": yr,
+            "segments": r[5], "done": r[6], "secs": int(r[7] or 0),
+            "pct": int(round(100 * (r[6] or 0) / r[5])) if r[5] else 0,
+            "dur": _dur(r[7]), "clips": clips_by_ann.get(r[4], 0), "refs": refs_by_yid.get(yt, 0),
+            "url": request.url_root.rstrip("/") + f"/videos?v={r[0]}",
+        })
+    total = len(vids)
+    by_id = {v["id"]: v for v in vids}
+
+    # the stage: today's lecture (rotating through the 30 most-clipped) or ?v=
+    ranked = sorted((v for v in vids if v["yt"] and v["clips"]), key=lambda v: (-v["clips"], -v["refs"]))
+    day = int(datetime.date.today().strftime("%j"))
+    hero, hero_label = None, ""
+    if v_sel and v_sel in by_id:
+        hero, hero_label = by_id[v_sel], (str(by_id[v_sel]["year"]) if by_id[v_sel]["year"] else "Lecture")
+    elif ranked:
+        pool = ranked[:30]
+        hero, hero_label = pool[day % len(pool)], "Today's lecture"
+    chapters, upnext = [], []
+    if hero:
+        try:
+            d = sqlite3.connect(f"file:{CLIP_STUDY_REFS}?mode=ro", uri=True)
+            seen = set()
+            for t, kind, cite, surah, ayah, hno, grp in d.execute(
+                    "SELECT t, kind, citation, surah, ayah, hadith_no, grp FROM refs "
+                    "WHERE ok=1 AND yid=? AND t IS NOT NULL ORDER BY t", (hero["yt"],)):
+                if kind == "quran" and surah:
+                    label = f"Quran {surah}:{ayah}"
+                else:
+                    label = (cite or "").strip()
+                if not label or label in seen:
+                    continue
+                seen.add(label)
+                chapters.append({"t": int(t), "hhmm": _hhmmss(int(t)), "label": label})
+                if len(chapters) >= 12:
+                    break
+            d.close()
+        except Exception:  # noqa: BLE001
+            chapters = []
+        if v_sel and hero["year"]:
+            cand = [v for v in vids if v["year"] == hero["year"] and v["id"] != hero["id"] and v["yt"]]
+            cand.sort(key=lambda v: (-v["clips"], -v["refs"]))
+        else:
+            cand = [v for v in ranked if v["id"] != hero["id"]]
+        upnext = cand[:5]
+
+    # the list
+    ERAS = [("2020s", "2020s", 2020, 2029), ("2010s", "2010s", 2010, 2019), ("2000s", "2000s", 2000, 2009)]
+    def era_of(yr):
+        for k, _l, lo, hi in ERAS:
+            if yr is not None and lo <= yr <= hi:
+                return k
+        return "undated"
+    items = vids
+    if q:
+        ql = q.lower()
+        items = [v for v in items if ql in v["title"].lower()]
+    if era:
+        items = [v for v in items if era_of(v["year"]) == era]
+    if dur == "short":
+        items = [v for v in items if 0 < v["secs"] < 3600]
+    if sort == "clips":
+        items.sort(key=lambda v: (-v["clips"], -v["refs"], v["title"].lower()))
+    elif sort == "refs":
+        items.sort(key=lambda v: (-v["refs"], -v["clips"], v["title"].lower()))
+    else:
+        items.sort(key=lambda v: (-(v["year"] or 0), -v["clips"], v["title"].lower()))
+    n_found = len(items)
+    PAGE = 48
+    page_items = items[offset:offset + PAGE]
+
+    def href(**kw):
+        params = {"q": q, "era": era, "sort": sort, "dur": dur}
+        params.update(kw)
+        params = {k: val for k, val in params.items() if val}
+        return "/videos" + ("?" + urlencode(params) if params else "")
+    filters = [{"label": "All", "count": f"{total:,}", "on": not era and not sort and not dur, "href": "/videos" + (f"?q={q}" if q else "")}]
+    for k, l, lo, hi in ERAS:
+        n = sum(1 for v in vids if era_of(v["year"]) == k)
+        if n:
+            filters.append({"label": l, "count": n, "on": era == k, "href": href(era="" if era == k else k, offset="")})
+    filters.append({"label": "Most clipped", "count": None, "on": sort == "clips", "href": href(sort="" if sort == "clips" else "clips", offset="")})
+    filters.append({"label": "Most referenced", "count": None, "on": sort == "refs", "href": href(sort="" if sort == "refs" else "refs", offset="")})
+    filters.append({"label": "Under an hour", "count": None, "on": dur == "short", "href": href(dur="" if dur == "short" else "short", offset="")})
+    more_href = href(offset=offset + PAGE) if n_found > offset + PAGE else ""
+    order = {"clips": "most clipped first", "refs": "most referenced first"}.get(sort, "newest first")
+    list_note = (f"{n_found:,} lecture{'' if n_found == 1 else 's'}" + (f" matching “{q}”" if q else "")
+                 + f", {order}")
+    # ?v=<id> only swaps the lecture in the player -- the page itself is the same
+    # list, so every one of those variants points a crawler at the one address.
+    keep = [(k, val) for k, val in request.args.items(multi=True) if k != "v"]
+    canonical = f"https://{request.host}/videos" + (f"?{urlencode(keep)}" if keep else "")
+    return render_template("videos.html", videos=vids, no_store=False, hero=hero, hero_label=hero_label,
+                           chapters=chapters, upnext=upnext, filters=filters, items=page_items,
+                           more_href=more_href, more_n=min(PAGE, n_found - offset - PAGE), q=q, era=era,
+                           list_note=list_note, canonical=canonical, seo_description=(
+                               f"{total} lectures by Maulana Wahiduddin Khan, each with its full "
+                               "transcript, timestamps, and the Quran and hadith it cites."))
+
+
+
+
+# Clips and Q&A are cut from these lectures by the separate clips app; read them
+# read-only so a lecture page can show what came out of it. NOTE the id bridge:
+# this app's video ids are roman.db ids, while clips/qa key on the annotation.db
+# id held in videos.source_video_id -- they differ for 2,138 of 2,178 videos, so
+# never assume they are the same number.
+CLIP_STUDY_CLIPS = "/root/clip_study/clips.db"
+CLIP_STUDY_REFS = "/root/clip_study/refs.db"
+CLIP_STUDY_QA = "/root/clip_study/qa.db"
+
+
+def _lecture_extras(conn, video_id):
+    """(clips, qa) cut from this lecture. Best effort -- never break the page."""
+    row = conn.execute(
+        "SELECT source_video_id FROM videos WHERE id = ?", (video_id,)).fetchone()
+    ann = row[0] if row and row[0] else None
+    clips, qa = [], []
+    if not ann:
+        return clips, qa
+    try:
+        d = sqlite3.connect(f"file:{CLIP_STUDY_CLIPS}?mode=ro", uri=True)
+        clips = [{"start": int(r[0] or 0), "hhmm": _hhmmss(r[0] or 0),
+                  "seconds": int(r[1] or 0), "scale": (r[2] or "").title(),
+                  "topic": r[3] or ""}
+                 for r in d.execute(
+                     "SELECT start_time, seconds, scale, topic FROM clips "
+                     "WHERE video_id = ? ORDER BY start_time", (ann,))]
+        d.close()
+    except Exception:
+        clips = []
+    try:
+        d = sqlite3.connect(f"file:{CLIP_STUDY_QA}?mode=ro", uri=True)
+        qa = [{"start": int(r[0] or 0), "hhmm": _hhmmss(r[0] or 0), "q": r[1] or ""}
+              for r in d.execute(
+                  "SELECT q_start, question_title FROM qa_units WHERE source_video_id = ? "
+                  "AND has_answer = 1 AND refined = 1 AND question_title != '' "
+                  "ORDER BY q_start", (ann,))]
+        d.close()
+    except Exception:
+        qa = []
+    return clips, qa
 
 @app.route("/video/<int:video_id>")
 def video(video_id):
@@ -247,6 +617,7 @@ def video(video_id):
     q = (request.args.get("q") or "").strip()
     conn = db.connect()  # writable: caches query transliteration + reads saved-state
     matched_ids, roman_terms, urdu_terms = [], [], []
+    lecture_clips, lecture_qa = [], []
     saved = {"video": False, "segments": []}
     try:
         data = search.get_video(conn, video_id)
@@ -255,12 +626,24 @@ def video(video_id):
             if q:
                 matched_ids = search.video_matches(conn, video_id, q)
                 roman_terms, urdu_terms = search.query_highlight_terms(conn, q)
+            lecture_clips, lecture_qa = _lecture_extras(conn, video_id)
+            # year + source id are what the crawler markup needs (a publish date
+            # and, through the source DB, YouTube's own date when it has one).
+            row = conn.execute(
+                "SELECT year, source_video_id FROM videos WHERE id = ?", (video_id,)).fetchone()
+            if row:
+                data["year"], data["source_video_id"] = row[0], row[1]
     finally:
         conn.close()
     if data is None:
         abort(404)
+    yid = search.youtube_id(data["youtube_url"])
+    seo_meta = seo.video_meta(
+        data, yid, lecture_clips, lecture_qa, f"https://{request.host}",
+        published_at=source.published_at(data.get("source_video_id")))
     return render_template(
-        "video.html", video=data, youtube_id=search.youtube_id(data["youtube_url"]),
+        "video.html", video=data, youtube_id=yid, seo=seo_meta,
+        lecture_clips=lecture_clips, lecture_qa=lecture_qa,
         q=q, matched_ids=matched_ids, roman_terms=roman_terms, urdu_terms=urdu_terms,
         saved_video=saved["video"], saved_segments=set(saved["segments"]),
     )

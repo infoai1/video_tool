@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ topic }} — Watch</title>
+<style>
+  :root{ --bg:#faf9f6; --card:#fff; --ink:#1c1b19; --muted:#6b6a65; --line:#e7e5df; --accent:#1d7a5f; --accent-bg:#e6f2ee; }
+  @media (prefers-color-scheme:dark){:root:not([data-theme=light]){ --bg:#0f0f11; --card:#1c1c20; --ink:#ececec; --muted:#a3a29c; --line:#2c2c33; --accent:#5dcaa5; --accent-bg:#123a30; }}:root[data-theme=dark]{ --bg:#0f0f11; --card:#1c1c20; --ink:#ececec; --muted:#a3a29c; --line:#2c2c33; --accent:#5dcaa5; --accent-bg:#123a30; }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;line-height:1.55}
+  .player-wrap{position:relative;background:#000;aspect-ratio:16/9;width:100%}
+  .player-wrap iframe{width:100%;height:100%;border:0;display:block}
+  .card-over{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;
+             background:#0b0b0b;color:#fff;text-align:center;padding:24px;gap:8px}
+  .card-over .up{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#8fd9c1}
+  .card-over .vt{font-size:18px;font-weight:600;max-width:80%}
+  .card-over .ct{font-size:14px;color:#cfcfcf}
+  .wrap{max-width:680px;margin:0 auto;padding:16px 18px 50px}
+  h1{font-size:22px;font-weight:600;margin:6px 0 2px}
+  .sub{color:var(--muted);font-size:13px;margin:0 0 16px}
+  .modes{display:flex;gap:8px;margin-bottom:16px}
+  .mode{flex:1;text-align:center;font-size:14px;font-weight:600;padding:12px 8px;border-radius:12px;
+        border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer;text-decoration:none}
+  .mode.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .mode small{display:block;font-weight:400;font-size:12px;opacity:.8;margin-top:2px}
+  .bar{height:5px;background:var(--line);border-radius:3px;overflow:hidden;margin:4px 0 14px}
+  .bar span{display:block;height:100%;width:0;background:var(--accent);transition:width .4s}
+  .now .lbl{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+  .now .nt{font-size:18px;font-weight:600;margin:3px 0 2px}
+  .now .nv{font-size:13px;color:var(--muted);margin:0 0 8px}
+  .now ul{margin:0;padding-left:18px}
+  .ctrls{display:flex;gap:8px;margin:14px 0}
+  .ctrls button{flex:1;font:inherit;font-size:14px;font-weight:500;padding:10px;border-radius:10px;
+                border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer}
+  .up-next{margin-top:20px}
+  .un{display:flex;gap:10px;align-items:center;padding:9px 0;border-top:1px solid var(--line);font-size:14px;cursor:pointer}
+  .un .n{color:var(--muted);width:22px}
+  .un.active{color:var(--accent);font-weight:600}
+</style>
+</head>
+<body>
+<div class="player-wrap">
+  <div id="ytplayer"></div>
+  <div class="card-over" id="card"><div class="up">Up next</div><div class="vt" id="cvt"></div><div class="ct" id="cct"></div></div>
+</div>
+<div class="wrap">
+  <h1>{{ topic }}</h1>
+  <p class="sub">Sit back — it plays through automatically.</p>
+  <div class="modes">
+    <a class="mode {{ 'on' if mode=='essence' else '' }}" href="?mode=essence">▶ Essence<small id="ess-len"></small></a>
+    <a class="mode {{ 'on' if mode=='full' else '' }}" href="?mode=full">▶ Full journey<small id="full-len"></small></a>
+  </div>
+  <div class="bar"><span id="prog"></span></div>
+  <div class="now">
+    <div class="lbl" id="pos"></div>
+    <div class="nt" id="nt"></div>
+    <div class="nv" id="nv"></div>
+    <ul id="nbul"></ul>
+  </div>
+  <div class="ctrls">
+    <button onclick="prev()">‹ Previous</button>
+    <button onclick="toggle()" id="pp">Pause</button>
+    <button onclick="next()">Skip ›</button>
+  </div>
+  <div class="up-next"><div class="lbl" style="font-size:12px;color:var(--muted);text-transform:uppercase">Playlist</div>
+    <div id="list"></div>
+  </div>
+</div>
+
+<script>
+var PL={{ playlist|tojson }}, ESS={{ ess_len }}, FULL={{ full_len }};
+var i=0, player, ready=false, timer=null, playing=true;
+document.getElementById('ess-len').textContent=' · ~'+Math.round(ESS/60)+' min';
+document.getElementById('full-len').textContent=' · ~'+Math.round(FULL/60)+' min';
+
+function fmt(s){s=Math.max(0,Math.round(s));return Math.floor(s/60)+':'+('0'+(s%60)).slice(-2);}
+function renderList(){
+  var h='';
+  PL.forEach(function(m,idx){h+='<div class="un'+(idx===i?' active':'')+'" onclick="jump('+idx+')">'+
+    '<span class="n">'+(idx+1)+'</span><span>'+m.title+'</span></div>';});
+  document.getElementById('list').innerHTML=h;
+}
+function showNow(){
+  var m=PL[i];
+  document.getElementById('pos').textContent='Now playing · '+(i+1)+' of '+PL.length;
+  document.getElementById('nt').textContent=m.title;
+  document.getElementById('nv').textContent=m.vtitle;
+  document.getElementById('nbul').innerHTML=(m.summary||[]).map(function(x){return '<li>'+x+'</li>';}).join('');
+  document.getElementById('prog').style.width=((i)/PL.length*100)+'%';
+  renderList();
+}
+function loadClip(showCard){
+  var m=PL[i];
+  var go=function(){ if(player.getVideoData && player.getVideoData().video_id===m.yid){player.seekTo(m.a,true);}
+                     else player.loadVideoById({videoId:m.yid,startSeconds:m.a}); if(playing)player.playVideo(); watch(); };
+  if(showCard){
+    var c=document.getElementById('card'); document.getElementById('cvt').textContent=m.vtitle;
+    document.getElementById('cct').textContent=m.title; c.style.display='flex';
+    setTimeout(function(){c.style.display='none'; go();},1400);
+  } else go();
+  showNow();
+}
+function watch(){
+  clearInterval(timer);
+  timer=setInterval(function(){
+    if(!ready)return; var t=player.getCurrentTime();
+    var m=PL[i]; document.getElementById('prog').style.width=((i+ (t-m.a)/Math.max(1,m.b-m.a))/PL.length*100)+'%';
+    if(t>=m.b){ next(); }
+  },500);
+}
+function next(){ if(i<PL.length-1){i++; loadClip(true);} else { player.pauseVideo(); clearInterval(timer);} }
+function prev(){ if(i>0){i--;} loadClip(false); }
+function jump(idx){ i=idx; loadClip(false); }
+function toggle(){ playing=!playing; if(playing){player.playVideo();document.getElementById('pp').textContent='Pause';}
+                   else{player.pauseVideo();document.getElementById('pp').textContent='Play';} }
+function onYouTubeIframeAPIReady(){
+  player=new YT.Player('ytplayer',{videoId:PL[0].yid,playerVars:{rel:0,modestbranding:1,playsinline:1},
+    events:{onReady:function(){ready=true; loadClip(false);},
+            onStateChange:function(e){ if(e.data===YT.PlayerState.ENDED) next(); }}});
+}
+showNow();
+(function(){var s=document.createElement('script');s.src="https://www.youtube.com/iframe_api";document.head.appendChild(s);})();
+</script>
+</body>
+</html>

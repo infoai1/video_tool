@@ -76,3 +76,26 @@ def counts(path=None):
         return videos, segs
     finally:
         conn.close()
+
+
+def published_at(source_video_id, path=None):
+    """YouTube's own publish date for a source video, or "" when unknown.
+
+    Only a minority of rows carry one; the lecture pages fall back to the year
+    the lecture was delivered. Read-only and best effort -- a missing date must
+    never cost a visitor the page.
+    """
+    if not source_video_id:
+        return ""
+    try:
+        conn = _connect_ro(path or config.SOURCE_DB)
+    except Exception:  # noqa: BLE001 -- the source DB is not required to render
+        return ""
+    try:
+        row = conn.execute(
+            "SELECT published_at FROM videos WHERE id = ?", (source_video_id,)).fetchone()
+        return (row[0] or "") if row else ""
+    except Exception:  # noqa: BLE001
+        return ""
+    finally:
+        conn.close()

@@ -54,3 +54,4 @@ uploads/
 # Exported transcript data (server-only)
 lecture_*.json
 *.jsonl
+data/start_here.json
