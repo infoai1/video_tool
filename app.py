@@ -22,6 +22,8 @@ import export
 import jobs
 import library
 import search
+import seo
+import source
 import transcribe
 import transliterate
 from flask import (Flask, abort, jsonify, redirect, render_template, request,
@@ -528,10 +530,16 @@ def videos():
     order = {"clips": "most clipped first", "refs": "most referenced first"}.get(sort, "newest first")
     list_note = (f"{n_found:,} lecture{'' if n_found == 1 else 's'}" + (f" matching “{q}”" if q else "")
                  + f", {order}")
+    # ?v=<id> only swaps the lecture in the player -- the page itself is the same
+    # list, so every one of those variants points a crawler at the one address.
+    keep = [(k, val) for k, val in request.args.items(multi=True) if k != "v"]
+    canonical = f"https://{request.host}/videos" + (f"?{urlencode(keep)}" if keep else "")
     return render_template("videos.html", videos=vids, no_store=False, hero=hero, hero_label=hero_label,
                            chapters=chapters, upnext=upnext, filters=filters, items=page_items,
                            more_href=more_href, more_n=min(PAGE, n_found - offset - PAGE), q=q, era=era,
-                           list_note=list_note)
+                           list_note=list_note, canonical=canonical, seo_description=(
+                               f"{total} lectures by Maulana Wahiduddin Khan, each with its full "
+                               "transcript, timestamps, and the Quran and hadith it cites."))
 
 
 
@@ -596,12 +604,22 @@ def video(video_id):
                 matched_ids = search.video_matches(conn, video_id, q)
                 roman_terms, urdu_terms = search.query_highlight_terms(conn, q)
             lecture_clips, lecture_qa = _lecture_extras(conn, video_id)
+            # year + source id are what the crawler markup needs (a publish date
+            # and, through the source DB, YouTube's own date when it has one).
+            row = conn.execute(
+                "SELECT year, source_video_id FROM videos WHERE id = ?", (video_id,)).fetchone()
+            if row:
+                data["year"], data["source_video_id"] = row[0], row[1]
     finally:
         conn.close()
     if data is None:
         abort(404)
+    yid = search.youtube_id(data["youtube_url"])
+    seo_meta = seo.video_meta(
+        data, yid, lecture_clips, lecture_qa, f"https://{request.host}",
+        published_at=source.published_at(data.get("source_video_id")))
     return render_template(
-        "video.html", video=data, youtube_id=search.youtube_id(data["youtube_url"]),
+        "video.html", video=data, youtube_id=yid, seo=seo_meta,
         lecture_clips=lecture_clips, lecture_qa=lecture_qa,
         q=q, matched_ids=matched_ids, roman_terms=roman_terms, urdu_terms=urdu_terms,
         saved_video=saved["video"], saved_segments=set(saved["segments"]),
