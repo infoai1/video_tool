@@ -264,6 +264,29 @@ def _sw():
     return send_from_directory(app.static_folder, "sw.js", mimetype="application/javascript")
 
 
+def _indexnow_key():
+    """Our IndexNow key, stored in static/ as indexnow-<key>.txt."""
+    try:
+        for name in sorted(os.listdir(app.static_folder)):
+            if name.startswith("indexnow-") and name.endswith(".txt"):
+                with open(os.path.join(app.static_folder, name), encoding="utf-8") as f:
+                    return f.read().strip()
+    except OSError:
+        pass
+    return ""
+
+
+INDEXNOW_KEY = _indexnow_key()
+if INDEXNOW_KEY:
+    # Bing, Yandex and the rest fetch this to check that a submission from
+    # scripts/indexnow.py really came from this site. They require it at the
+    # root, and they only accept URLs from the directory it sits in -- so the
+    # root is also the only place from which we can submit the whole site.
+    @app.route(f"/{INDEXNOW_KEY}.txt")
+    def _indexnow():
+        return INDEXNOW_KEY, 200, {"Content-Type": "text/plain; charset=utf-8"}
+
+
 @app.route("/")
 def index():
     q = (request.args.get("q") or "").strip()
