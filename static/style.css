@@ -865,4 +865,4 @@ body.landing-page main.landing { max-width: 1240px; padding-top: 0; padding-bott
 .c3-rot.c3-why{text-shadow:0 0 .5em color-mix(in srgb,var(--accent,currentColor) 55%,transparent)}
 .c3-rot.c3-why::after{opacity:.7;animation:c3RotLine .5s ease}
 @keyframes c3RotLine{from{transform:scaleX(0)}to{transform:scaleX(1)}}
-@media(prefers-reduced-motion:reduce){.c3-rot{transition:none}.c3-rot.is-in{animation:none}}
+@media(prefers-reduced-motion:reduce){.c3-rot{transition:opacity .3s ease}.c3-rot.is-out{transform:none;filter:none;opacity:0}.c3-rot.is-in{animation:none}}
