@@ -16,6 +16,8 @@
   .fw-ok{margin:10px 0;padding:10px 14px;border-radius:10px;
     background:var(--accent-soft,rgba(0,128,96,.12));color:var(--accent);font-size:14px;max-width:64ch}
   .fw-variants{font-size:13.5px;color:var(--muted);margin:4px 0 14px}
+  .fw-chip{font-size:13px;color:var(--accent);text-decoration:none}
+  .fw-chip:hover{text-decoration:underline}
   .fw-player{max-width:640px;aspect-ratio:16/9;background:#000;border-radius:10px;overflow:hidden;
     margin:0 0 16px;display:none}
   .fw-player.on{display:block}
@@ -34,16 +36,27 @@
 </style>
 <div class="fw-head">
   <h1 class="fw-h1">Fix a word everywhere</h1>
-  <p class="fw-sub">Type the correct spelling. Every line in the library carrying any
-    variant spelling of it shows up below, grouped by lecture, so you can play, check,
-    and fix them all at once. A line already corrected by hand is left alone.</p>
+  <p class="fw-sub">Type the correct spelling, and optionally other spellings to find
+    after it, separated by spaces or commas (e.g. <i>khushu khusho khashu</i>). Every
+    line in the library carrying any of those spellings shows up below, grouped by
+    lecture, so you can play, check, and fix them all at once. A line already
+    corrected by hand is left alone.</p>
 </div>
 
 <form method="get" class="fw-form">
-  <label>Word <input type="text" name="w" value="{{ w }}" maxlength="40" required></label>
+  <label>Word(s) <input type="text" name="w" value="{{ w }}" maxlength="200" required></label>
   <button type="submit" class="ghost">Find</button>
 </form>
 {% if error %}<p class="fw-err">{{ error }}</p>{% endif %}
+
+{% if suggestions %}
+<p class="fw-sub">Other spellings the transcripts use &mdash; tap to add:
+  {% for term, cnt in suggestions %}
+  <a href="{{ url_for('fix_words_page', w=(w ~ ' ' ~ term)) }}" class="fw-chip">{{ term }} ({{ cnt }})</a>{% if not loop.last %}, {% endif %}
+  {% endfor %}
+  <br><small>These match by consonant skeleton, not meaning &mdash; some may be unrelated words
+  that happen to sound similar (e.g. khushi/khushu). You decide which to add.</small></p>
+{% endif %}
 
 {% if result %}
   {% if result.error %}
@@ -76,7 +89,7 @@
     {% endfor %}
   </div>
   {% endfor %}
-  <p class="fw-replace">Replace each highlighted word with: <b>{{ w }}</b></p>
+  <p class="fw-replace">Replace each highlighted word with: <b>{{ words[0] }}</b></p>
   <button type="submit" name="action" value="ticked" class="ghost">Apply to ticked</button>
   <button type="submit" name="action" value="all">Apply to all</button>
 </form>

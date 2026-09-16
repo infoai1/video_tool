@@ -687,11 +687,16 @@ def fix_words_page():
     conn = db.connect()
     try:
         w = (request.values.get("w") or "").strip()
+        words = _re.split(r"[\s,]+", w) if w else []
+        words = [t for t in words if t]
         error = None
-        if w and (" " in w or "\t" in w or len(w) > 40):
-            error, w = "one word at a time, please (max 40 characters)", ""
+        if words and (len(words) > 8 or any(
+                len(t) > 40 or not _re.fullmatch(r"[A-Za-z']+", t) for t in words)):
+            error, w, words = (
+                "one to eight words, letters and apostrophes only, please "
+                "(max 40 characters each)", "", [])
         result = None
-        if request.method == "POST" and w:
+        if request.method == "POST" and words:
             revert_id = request.form.get("revert", type=int)
             if revert_id is not None:
                 prior = corrections.last(conn, revert_id)
@@ -701,10 +706,12 @@ def fix_words_page():
             else:
                 action = request.form.get("action")
                 ids = request.form.getlist("seg", type=int) if action == "ticked" else None
-                result = corrections.apply_word(conn, w, ids=ids, who=session.get("user") or "owner")
+                result = corrections.apply_word(conn, words, ids=ids, who=session.get("user") or "owner")
                 if "error" not in result:
                     conn.commit()
-        rows, variants, total = corrections.word_matches(conn, w) if w else ([], set(), 0)
+        rows, variants, total = corrections.word_matches(conn, words) if words else ([], set(), 0)
+        suggestions = corrections.spellings_like(conn, words[0]) if words else []
+        suggestions = [(t, c) for t, c in suggestions if t not in {t2.lower() for t2 in words}]
         remembered = corrections.recent(conn)
         if remembered:
             vids = {r["video_id"] for r in remembered if r["video_id"] is not None}
@@ -726,8 +733,8 @@ def fix_words_page():
             lectures.append(by_video[r["video_id"]])
         by_video[r["video_id"]]["lines"].append(r)
     return render_template(
-        "fix_words.html", w=w, error=error, result=result, lectures=lectures,
-        variants=sorted(variants), total=total, shown=len(rows),
+        "fix_words.html", w=w, words=words, error=error, result=result, lectures=lectures,
+        variants=sorted(variants), total=total, shown=len(rows), suggestions=suggestions,
         remembered=remembered, highlight=_highlight_variants, hhmmss=_hhmmss, no_store=True)
 
 

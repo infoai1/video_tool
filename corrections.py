@@ -113,6 +113,17 @@ def last(conn, seg_id):
 
 
 _WORD_RE = re.compile(r"[A-Za-z']+")
+_SKEL_RUN = re.compile(r"(.)\1+")
+_SKEL_DROP = re.compile(r"[aeiou']")
+
+
+def _skeleton(word):
+    """Consonant skeleton for spellings_like(): lowercase, drop vowels/apostrophes,
+    collapse repeated letters. Two spellings of the same word usually collapse to
+    the same skeleton (khushu/khusho -> khsh); unrelated words sometimes do too
+    (khushi = happiness also -> khsh), which is why spellings_like() is a
+    suggestion, never an automatic match."""
+    return _SKEL_RUN.sub(r"\1", _SKEL_DROP.sub("", word.lower()))
 
 
 def _human_touched(conn, seg_id):
@@ -124,32 +135,36 @@ def _human_touched(conn, seg_id):
             not str(prior["who"]).startswith("glossary:") and prior["who"] != "revert")
 
 
-def word_matches(conn, word, limit=500):
-    """Every line in the library that has `word` in any variant spelling.
+def word_matches(conn, words, limit=500):
+    """Every line in the library that has any of `words` in any variant spelling.
 
-    Variant spelling is whatever normalize.py already folds together (v/w,
-    doubled letters, diacritics) -- the same fold search.py matches queries
-    on, so this finds exactly what a seeker's search would. Returns
-    (rows, variants, total): rows capped at `limit`, ordered by lecture
-    title then start_time; variants is the set of actual spellings found
-    (used both to highlight and to know what to replace).
+    `words` is a list of tokens (owner-typed spellings, e.g. ["khushu",
+    "khusho"]) -- variant spelling is also whatever normalize.py already
+    folds together (v/w, doubled letters, diacritics), the same fold
+    search.py matches queries on. The union of both is searched: one FTS
+    key per distinct normalize() of a token. Returns (rows, variants,
+    total): rows capped at `limit`, ordered by lecture title then
+    start_time; variants is the set of actual spellings found (used both
+    to highlight and to know what to replace).
 
     A line a human corrected by hand is still listed (so the owner can see
     it) but flagged "human" -- the caller must never offer it for a bulk fix.
     """
     ensure_schema(conn)
-    key = normalize.normalize(word)
-    if not key or " " in key:
+    keys = {k for k in (normalize.normalize(w) for w in words) if k and " " not in k}
+    if not keys:
         return [], set(), 0
+    match_expr = " OR ".join(keys)
     cand = conn.execute(
         "SELECT s.id, s.video_id, v.title, v.youtube_url, s.start_time, "
         "COALESCE(NULLIF(TRIM(s.roman_clean),''), s.roman_text) "
         "FROM segments_fts f JOIN segments s ON s.id = f.rowid JOIN videos v ON v.id = s.video_id "
-        "WHERE segments_fts MATCH ? ORDER BY v.title, s.start_time", (key,)).fetchall()
+        "WHERE segments_fts MATCH ? ORDER BY v.title, s.start_time", (match_expr,)).fetchall()
     rows, variants = [], set()
     for seg_id, video_id, title, yt_url, start, text in cand:
         text = text or ""
-        found = [w for w in _WORD_RE.findall(text) if normalize.normalize(w) == key]
+        found = [w.strip("'") for w in _WORD_RE.findall(text)
+                 if normalize.normalize(w.strip("'")) in keys and w.strip("'")]
         if not found:
             continue  # FTS is a prefilter -- a real word boundary may not match
         variants.update(w.lower() for w in found)
@@ -159,18 +174,57 @@ def word_matches(conn, word, limit=500):
     return rows[:limit], variants, len(rows)
 
 
-def apply_word(conn, word, ids=None, who="owner"):
-    """Replace every variant spelling of `word` with `word` itself.
+def spellings_like(conn, word, limit=12):
+    """Other spellings the library actually uses for `word`, as a suggestion.
 
-    `ids`, when given, restricts the fix to those segment ids (the owner's
-    ticked subset) -- always intersected with a fresh word_matches() lookup,
-    never the client's say-so alone. Human-corrected lines are always
-    skipped. One word_fixes row per variant actually replaced.
+    Reads the FTS5 vocabulary of segments_fts directly -- no new table on
+    disk, just a temp view over the existing index -- and keeps terms whose
+    consonant skeleton matches `word`'s. This is a SUGGESTION only: a false
+    friend with the same skeleton (khushi = happiness, same skeleton as
+    khushu) will appear; the owner decides what to add to the box, nothing
+    here adds it for them. Returns [(term, cnt), ...] sorted by count desc.
+
+    ponytail: skeleton matching over-suggests; upgrade: rank by edit distance
+    if the list gets noisy.
     """
-    word = (word or "").strip()
-    if not word or " " in word or "\t" in word:
+    ensure_schema(conn)
+    key = normalize.normalize(word)
+    if not key or " " in key or len(key) < 2:
+        return []
+    try:
+        conn.execute(
+            "CREATE VIRTUAL TABLE temp.vocab USING fts5vocab(main, 'segments_fts', 'row')")
+    except Exception as e:  # noqa: BLE001 - "already exists" is fine, a missing fts5vocab isn't
+        if "already exists" not in str(e).lower():
+            return []
+    skel = _skeleton(key)
+    prefix = key[:2] + "*"
+    out = []
+    for term, cnt in conn.execute(
+            "SELECT term, cnt FROM temp.vocab WHERE term GLOB ?", (prefix,)):
+        if term == key or _skeleton(term) != skel:
+            continue
+        out.append((term, cnt))
+    out.sort(key=lambda t: -t[1])
+    return out[:limit]
+
+
+def apply_word(conn, words, ids=None, who="owner"):
+    """Replace every matched variant spelling with `words[0]`, the owner's chosen spelling.
+
+    `words` is a list -- the first token is the replacement, the rest are
+    variants to find (in addition to whatever normalize.py already folds
+    together). `ids`, when given, restricts the fix to those segment ids
+    (the owner's ticked subset) -- always intersected with a fresh
+    word_matches() lookup, never the client's say-so alone. Human-corrected
+    lines are always skipped. One word_fixes row per variant actually
+    replaced.
+    """
+    words = [w.strip() for w in (words or []) if w and w.strip()]
+    if not words or any(" " in w or "\t" in w for w in words):
         return {"error": "one word at a time, please"}
-    rows, _variants, _total = word_matches(conn, word)
+    word = words[0]
+    rows, _variants, _total = word_matches(conn, words)
     if ids is not None:
         ids = set(ids)
         rows = [r for r in rows if r["segment_id"] in ids]
