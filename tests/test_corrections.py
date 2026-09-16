@@ -92,3 +92,69 @@ def test_the_window_marks_what_has_been_corrected(conn):
 def test_with_no_moment_the_lecture_starts_at_the_top(conn):
     lines = corrections.window(conn, 7, around=None, span=100)
     assert lines == [] or lines[0]["t"] < 100
+
+
+def test_glossary_fixes_matching_lines_only(conn):
+    r = corrections.glossary_apply(conn, "line", "row")
+    assert r["lines"] == 2      # "dusri line" and "bahut baad ki line"
+    assert r["lectures"] == 1
+    assert r["skipped_human"] == 0
+
+
+def test_glossary_is_whole_word(conn):
+    conn.execute("INSERT INTO segments (id, video_id, start_time, roman_text, roman_norm) "
+                 "VALUES (4, 7, 3700.0, 'yeh topic hai toh sahi', 'yeh topic hai toh sahi')")
+    conn.execute("INSERT INTO segments_fts (rowid, roman_norm) VALUES (4, 'yeh topic hai toh sahi')")
+    r = corrections.glossary_apply(conn, "to", "too", dry=True)
+    assert r["lines"] == 0      # "topic" and "toh" must not be touched
+
+
+def test_glossary_keeps_capitalisation(conn):
+    conn.execute("INSERT INTO segments (id, video_id, start_time, roman_text, roman_norm) "
+                 "VALUES (5, 7, 3800.0, 'Khasho se namaz parhna', 'khasho se namaz parhna')")
+    conn.execute("INSERT INTO segments_fts (rowid, roman_norm) VALUES (5, 'khasho se namaz parhna')")
+    r = corrections.glossary_apply(conn, "khasho", "khusho")
+    [s] = [x for x in r["sample"] if x["segment_id"] == 5]
+    assert s["after"] == "Khusho se namaz parhna"
+
+
+def test_glossary_dry_run_writes_nothing(conn):
+    corrections.glossary_apply(conn, "line", "row", dry=True)
+    assert corrections.history(conn, 7) == []
+    assert corrections.word_fixes(conn) == []
+
+
+def test_glossary_skips_a_hand_corrected_line(conn):
+    corrections.apply(conn, 2, "dusri sataar", who="junaid")
+    r = corrections.glossary_apply(conn, "sataar", "line")
+    assert r["skipped_human"] == 1
+    assert r["lines"] == 0
+
+
+def test_glossary_apply_writes_a_word_fix_and_corrections(conn):
+    r = corrections.glossary_apply(conn, "line", "row")
+    fixes = corrections.word_fixes(conn)
+    assert fixes[0]["wrong"] == "line" and fixes[0]["right"] == "row"
+    hist = corrections.history(conn, 7)
+    assert all(h["who"] == "glossary:line" for h in hist)
+    assert len(hist) == r["lines"]
+
+
+def test_apply_then_revert_restores_everything(conn):
+    corrections.apply(conn, 1, "namaz hai khusho ki zuban mein")
+    prior = corrections.last(conn, 1)
+    assert corrections.apply(conn, 1, prior["was"], who="revert") is True
+    shown = conn.execute(
+        "SELECT COALESCE(NULLIF(TRIM(roman_clean),''), roman_text) FROM segments WHERE id=1"
+    ).fetchone()[0]
+    assert shown == "namaz hai khasho ki zuban mein"
+    assert _matches(conn, "khasho") == [1]
+    hist = corrections.history(conn, 7)
+    assert hist[0]["who"] == "revert"
+
+
+def test_window_carries_the_previous_wording(conn):
+    corrections.apply(conn, 1, "namaz hai khusho ki zuban mein")
+    lines = corrections.window(conn, 7, around=3475)
+    assert lines[0]["was"] == "namaz hai khasho ki zuban mein"
+    assert lines[1]["was"] == ""

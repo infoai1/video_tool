@@ -358,6 +358,8 @@ a.disabled { pointer-events: none; opacity: .7; }
 .line { display: flex; gap: .85rem; padding: .5rem 0; border-bottom: 1px solid var(--line); }
 .line .text { display: flex; flex-direction: column; }
 .ts { color: var(--muted); font-variant-numeric: tabular-nums; text-decoration: none; white-space: nowrap; font-size: .9rem; padding-top: .12rem; }
+.ts.report { font-size: .78rem; margin-left: .35rem; opacity: .6; }
+.ts.report:hover { opacity: 1; }
 a.ts.seek { cursor: pointer; }
 a.ts.seek:hover { color: var(--accent); text-decoration: underline; }
 .transcript.mode-roman .urdu { display: none; }

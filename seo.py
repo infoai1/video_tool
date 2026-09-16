@@ -226,16 +226,7 @@ def video_meta(video, youtube_id, clips, qa, base_url, published_at=None):
     if clip_nodes:
         node["hasPart"] = clip_nodes
 
-    crumbs = {
-        "@context": "https://schema.org",
-        "@type": "BreadcrumbList",
-        "itemListElement": [
-            {"@type": "ListItem", "position": 1, "name": "Home", "item": base + "/"},
-            {"@type": "ListItem", "position": 2, "name": "Videos", "item": base + "/videos"},
-            {"@type": "ListItem", "position": 3, "name": title, "item": canonical},
-        ],
-    }
-    blob = json.dumps([node, crumbs], ensure_ascii=False)
+    blob = json.dumps(node, ensure_ascii=False)
     # "</script>" inside a JSON string would end the block early.
     blob = blob.replace("</", "<\\/")
     return {"title": f"{title} — {SPEAKER}", "description": desc,

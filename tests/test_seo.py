@@ -31,7 +31,7 @@ def test_title_drops_the_speaker_boilerplate():
 
 
 def test_the_spoken_words_are_in_the_structured_data():
-    node = json.loads(_meta()["jsonld"].replace("<\\/", "</"))[0]
+    node = json.loads(_meta()["jsonld"].replace("<\\/", "</"))
     assert node["@type"] == "VideoObject"
     assert node["transcript"] == "pehli baat dusri baat aakhri baat"
     assert node["url"] == "https://video.spiritualmessage.org/video/7"
@@ -46,7 +46,7 @@ def test_transcript_is_capped_so_the_page_stays_light():
 
 
 def test_key_moments_carry_a_start_an_end_and_a_link():
-    node = json.loads(_meta()["jsonld"].replace("<\\/", "</"))[0]
+    node = json.loads(_meta()["jsonld"].replace("<\\/", "</"))
     first = node["hasPart"][0]
     assert first["name"] == "the purpose of fasting"
     assert first["startOffset"] == 60 and first["endOffset"] == 180
@@ -56,7 +56,7 @@ def test_key_moments_carry_a_start_an_end_and_a_link():
 
 
 def test_a_lecture_with_no_clips_still_gets_valid_markup():
-    node = json.loads(_meta(clips=[], qa=[])["jsonld"].replace("<\\/", "</"))[0]
+    node = json.loads(_meta(clips=[], qa=[])["jsonld"].replace("<\\/", "</"))
     assert "hasPart" not in node
     assert node["description"]
 

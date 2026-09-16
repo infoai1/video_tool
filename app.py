@@ -103,6 +103,7 @@ _OPERATOR_ENDPOINTS = {
     "api_save_video", "api_save_segment", "api_bookmark_delete", "api_bookmark_tag",
     "crawled_page",  # the crawl log is the owner's working list, not a public page
     "fix_page",      # correcting a transcript is the owner's alone
+    "fix_words_page",  # a word-wide fix touches every lecture at once, owner only
 }
 
 
@@ -305,22 +306,6 @@ def _llms():
     return llms.text(request.host), 200, {"Content-Type": "text/plain; charset=utf-8"}
 
 
-@app.route("/opensearch.xml")
-def _opensearch():
-    """The standard way to tell a browser or a crawler what our search URL is."""
-    base = f"https://{request.host}"
-    xml = ('<?xml version="1.0" encoding="UTF-8"?>\n'
-           '<OpenSearchDescription xmlns="http://a9.com/-/spec/opensearch/1.1/">'
-           "<ShortName>Maulana Wahiduddin Khan</ShortName>"
-           "<Description>Search the transcripts of his recorded talks: his answers, "
-           "the verses and hadith he cites, lectures and clips.</Description>"
-           "<InputEncoding>UTF-8</InputEncoding>"
-           f'<Url type="text/html" method="get" template="{base}/search?q={{searchTerms}}"/>'
-           f"<Image height=\"16\" width=\"16\" type=\"image/png\">{base}/static/icon-192.png</Image>"
-           "</OpenSearchDescription>\n")
-    return xml, 200, {"Content-Type": "application/opensearchdescription+xml; charset=utf-8"}
-
-
 @app.route("/")
 def index():
     q = (request.args.get("q") or "").strip()
@@ -480,14 +465,6 @@ def videos():
     offset = max(0, a.get("offset", type=int) or 0)
     rows, clips_by_ann, refs_by_yid = _library_counts()
 
-    def _clean(t):
-        t = (t or "").strip()
-        t = _re_mwk.sub(" ", t)
-        t = _re.sub(r"\s*[|\-–—]\s*[|\-–—]\s*", " · ", t)
-        t = _re.sub(r"\s*\|\s*", " · ", t)
-        t = _re.sub(r"\s{2,}", " ", t).strip(" ·-–—,|")
-        return t or "Untitled lecture"
-
     def _dur(secs):
         secs = int(secs or 0)
         if not secs:
@@ -499,7 +476,7 @@ def videos():
         yr = int(r[3]) if r[3] is not None and str(r[3]).isdigit() else None
         yt = search.youtube_id(r[2]) or ""
         vids.append({
-            "id": r[0], "title": _clean(r[1]), "yt": yt, "year": yr,
+            "id": r[0], "title": seo.clean_title(r[1]), "yt": yt, "year": yr,
             "segments": r[5], "done": r[6], "secs": int(r[7] or 0),
             "pct": int(round(100 * (r[6] or 0) / r[5])) if r[5] else 0,
             "dur": _dur(r[7]), "clips": clips_by_ann.get(r[4], 0), "refs": refs_by_yid.get(yt, 0),
@@ -701,15 +678,21 @@ def fix_page(video_id):
             abort(404)
         saved = 0
         if request.method == "POST":
-            for field, value in request.form.items():
-                if not field.startswith("s"):
-                    continue
-                try:
-                    seg_id = int(field[1:])
-                except ValueError:
-                    continue
-                if corrections.apply(conn, seg_id, value, session.get("user") or "owner"):
+            revert_id = request.form.get("revert", type=int)
+            if revert_id is not None:
+                prior = corrections.last(conn, revert_id)
+                if prior is not None and corrections.apply(conn, revert_id, prior["was"], who="revert"):
                     saved += 1
+            else:
+                for field, value in request.form.items():
+                    if not field.startswith("s"):
+                        continue
+                    try:
+                        seg_id = int(field[1:])
+                    except ValueError:
+                        continue
+                    if corrections.apply(conn, seg_id, value, session.get("user") or "owner"):
+                        saved += 1
             conn.commit()
         start = request.args.get("t", type=int)
         if start is None:
@@ -721,6 +704,37 @@ def fix_page(video_id):
         "fix.html", video={"id": meta[0], "title": meta[1]},
         youtube_id=search.youtube_id(meta[2]), lines=lines, start=int(start or 0),
         saved=saved, hhmmss=_hhmmss, no_store=True)
+
+
+@app.route("/fix/words", methods=["GET", "POST"])
+def fix_words_page():
+    """Fix a word everywhere it was misheard, across the whole library.
+
+    A wrong word does not repeat only in one lecture -- the same mis-hearing
+    (khasho for khusho) recurs across the corpus. This finds every line that
+    still has it and, on request, corrects all of them the same way a single
+    correction does: page, search text, and index together.
+    """
+    if not db.exists():
+        abort(404)
+    conn = db.connect()
+    try:
+        result = None
+        wrong = right = ""
+        if request.method == "POST":
+            wrong = (request.form.get("wrong") or "").strip()
+            right = (request.form.get("right") or "").strip()
+            action = request.form.get("action")
+            result = corrections.glossary_apply(
+                conn, wrong, right, who=session.get("user") or "owner",
+                dry=(action != "apply"))
+            if action == "apply" and "error" not in result:
+                conn.commit()
+        remembered = corrections.word_fixes(conn)
+    finally:
+        conn.close()
+    return render_template("fix_words.html", result=result, wrong=wrong, right=right,
+                            remembered=remembered, no_store=True)
 
 
 @app.route("/video/<int:video_id>/export.docx")
@@ -1144,7 +1158,10 @@ def dashboard():
 
 @app.route("/feedback")
 def feedback_page():
-    return render_template("feedback.html", sent=False)
+    # ?about=<path> prefills which page/line this is about -- the "report a
+    # wrong line" link on a transcript, so a person does not have to paste it.
+    about = (request.args.get("about") or "")[:300]
+    return render_template("feedback.html", sent=False, about=about)
 
 
 @app.route("/api/feedback", methods=["POST"])

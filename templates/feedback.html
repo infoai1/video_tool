@@ -13,8 +13,9 @@
     </select>
   </label>
   <label>Message
-    <textarea name="message" rows="6" required placeholder="What happened, or what would you like?"></textarea>
+    <textarea name="message" rows="6" required placeholder="What happened, or what would you like?">{{ 'This line is wrong: ' + about + '\n' if about }}</textarea>
   </label>
+  {% if about %}<input type="hidden" name="page" value="{{ about }}">{% endif %}
   <label>Your email (optional)
     <input type="email" name="email" placeholder="you@example.com">
   </label>
@@ -31,7 +32,7 @@
       kind: form.kind.value,
       message: form.message.value,
       email: form.email.value,
-      page: document.referrer || location.href,
+      page: (form.page && form.page.value) || document.referrer || location.href,
     };
     status.textContent = 'Sending…';
     try {

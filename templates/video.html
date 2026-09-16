@@ -163,6 +163,10 @@
     {% else %}
       <span class="ts">{{ s.start_time|hhmmss }}</span>
     {% endif %}
+    {% if not operator %}
+    <a class="ts report" href="/feedback?about=%2Fvideo%2F{{ video.id }}%23t%3D{{ s.start_time|int }}"
+       title="This line is wrong">report</a>
+    {% endif %}
     <span class="text">
       <span class="roman" data-seg="{{ s.segment_id }}">{{ s.roman_text or '' }}</span>
       {% if s.urdu_text %}<span class="urdu" dir="rtl">{{ s.urdu_text }}</span>{% endif %}

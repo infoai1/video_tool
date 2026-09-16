@@ -33,6 +33,8 @@
   .fx-bar button{font:inherit;font-size:15px;font-weight:600;padding:11px 22px;border:0;border-radius:10px;
     background:var(--accent);color:#fff;cursor:pointer}
   .fx-note{font-size:13px;color:var(--muted)}
+  .fx-undo{font-size:11px;font-weight:600;padding:3px 8px;margin-left:8px;border:1px solid var(--line);
+    border-radius:6px;background:var(--surface);color:var(--ink);cursor:pointer}
   @media(max-width:560px){.fx-line{gap:8px}.fx-t{min-width:46px}}
 </style>
 <div class="fx-head">
@@ -68,13 +70,19 @@
     <div class="fx-f">
       <textarea name="s{{ l.id }}" rows="2">{{ l.text }}</textarea>
       {% if l.urdu %}<div class="fx-ur">{{ l.urdu }}</div>{% endif %}
-      {% if l.corrected %}<div class="fx-done">corrected</div>{% endif %}
+      {% if l.corrected %}
+      <div class="fx-done">corrected
+        {% if l.was %}<span class="fx-note">— was: {{ l.was }}</span>{% endif %}
+        <button type="submit" name="revert" value="{{ l.id }}" class="fx-undo">Undo</button>
+      </div>
+      {% endif %}
     </div>
   </div>
   {% endfor %}
   <div class="fx-bar">
     <button type="submit">Save corrections</button>
     <span class="fx-note">{{ lines|length }} lines shown · {{ hhmmss(start) }} onward</span>
+    <a href="/fix/words" class="fx-note">Fix a word everywhere</a>
   </div>
 </form>
 {% endblock %}

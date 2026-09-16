@@ -16,12 +16,10 @@ numbers, not the site.
 import os
 import re
 import sqlite3
-import time
 from collections import OrderedDict
 
 LOGS = ("/var/log/nginx/access.log", "/var/log/nginx/access.log.1")
 MAX_BYTES = 40_000_000       # ~2-3 days of this server's traffic
-CACHE_SECONDS = 300
 
 # The crawlers worth naming. A user-agent is a claim, not a proof -- anyone can
 # send one -- so where a crawler publishes its addresses we check them, and
@@ -45,8 +43,6 @@ _LINE = re.compile(
     r'^(?P<ip>\S+) \S+ \S+ \[(?P<when>[^\]]+)\] "(?:GET|HEAD) '
     r'(?P<path>/(?:video/\d+|clips/qa/\d+))(?:[?#]\S*)? [^"]*" (?P<status>\d{3}) '
     r'\S+ "[^"]*" "(?P<ua>[^"]*)"')
-
-_CACHE = {"at": 0.0, "rows": None}
 
 
 def _tail(path, max_bytes=MAX_BYTES):
@@ -110,11 +106,7 @@ def _titles(paths, roman_db, qa_db):
 
 
 def rows(roman_db, qa_db):
-    """One row per page a crawler read, most-read first. Cached five minutes."""
-    now = time.time()
-    if _CACHE["rows"] is not None and now - _CACHE["at"] < CACHE_SECONDS:
-        return _CACHE["rows"]
-
+    """One row per page a crawler read, most-read first."""
     hits = {}
     totals = OrderedDict((name, 0) for name, _, _ in BOTS)
     first_seen = last_seen = ""
@@ -156,5 +148,4 @@ def rows(roman_db, qa_db):
               "lectures": sum(1 for r in out if r["kind"] == "Lecture"),
               "answers": sum(1 for r in out if r["kind"] == "Answer"),
               "visits": sum(r["n"] for r in out)}
-    _CACHE.update(at=now, rows=result)
     return result

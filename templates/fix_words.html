@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Fix a word everywhere{% endblock %}
+{% block head %}<meta name="robots" content="noindex, nofollow">{% endblock %}
+{% block content %}
+<style>
+  .fw-head{max-width:640px;margin:4px 0 14px}
+  .fw-h1{font-size:20px;font-weight:700;letter-spacing:-.02em;margin:4px 0 8px}
+  .fw-sub{font-size:14.5px;line-height:1.6;color:var(--muted);margin:0 0 6px;max-width:64ch}
+  .fw-form{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:14px 0}
+  .fw-form input[type=text]{font:inherit;padding:8px 10px;border:1px solid var(--line);
+    border-radius:8px;background:var(--surface);color:var(--ink);width:14em}
+  .fw-form button{font:inherit;font-size:14.5px;font-weight:600;padding:9px 18px;border:0;
+    border-radius:8px;background:var(--accent);color:#fff;cursor:pointer}
+  .fw-form button.ghost{background:var(--surface);color:var(--ink);border:1px solid var(--line)}
+  .fw-err{color:#b00;font-size:14px;margin:6px 0}
+  .fw-ok{margin:10px 0;padding:10px 14px;border-radius:10px;
+    background:var(--accent-soft,rgba(0,128,96,.12));color:var(--accent);font-size:14px;max-width:64ch}
+  .fw-sample{border-collapse:collapse;width:100%;max-width:760px;font-size:13.5px;margin-top:8px}
+  .fw-sample td{padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+  table.fw-list{border-collapse:collapse;width:100%;max-width:640px;font-size:14px;margin-top:18px}
+  table.fw-list td, table.fw-list th{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left}
+</style>
+<div class="fw-head">
+  <h1 class="fw-h1">Fix a word everywhere</h1>
+  <p class="fw-sub">One correction, applied to every line the search index can find with it.
+    A line a human already corrected by hand is left alone.</p>
+</div>
+
+<form method="post" class="fw-form">
+  <label>Wrong <input type="text" name="wrong" value="{{ wrong }}" required></label>
+  <label>Right <input type="text" name="right" value="{{ right }}" required></label>
+  <button type="submit" name="action" value="preview" class="ghost">Preview</button>
+  <button type="submit" name="action" value="apply">Apply</button>
+</form>
+
+{% if result %}
+  {% if result.error %}
+    <p class="fw-err">{{ result.error }}</p>
+  {% else %}
+    <p class="fw-ok">{{ result.lines }} line{{ '' if result.lines == 1 else 's' }} in
+      {{ result.lectures }} lecture{{ '' if result.lectures == 1 else 's' }}
+      {{ 'changed' if request.form.get('action') == 'apply' else 'would change' }}
+      · {{ result.skipped_human }} skipped (corrected by hand)</p>
+    {% if result.sample %}
+    <table class="fw-sample">
+      {% for s in result.sample %}
+      <tr><td>#{{ s.segment_id }}</td><td>{{ s.before }}</td><td>&rarr;</td><td>{{ s.after }}</td></tr>
+      {% endfor %}
+    </table>
+    {% endif %}
+  {% endif %}
+{% endif %}
+
+{% if remembered %}
+<table class="fw-list">
+  <tr><th>Wrong</th><th>Right</th><th>By</th><th>When</th></tr>
+  {% for r in remembered %}
+  <tr><td>{{ r.wrong }}</td><td>{{ r.right }}</td><td>{{ r.who }}</td><td>{{ r.at }}</td></tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% endblock %}
