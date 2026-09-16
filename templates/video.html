@@ -71,8 +71,8 @@
     {% if operator %}
     {# The owner's way in to correcting what the machine misheard, at the
        moment being read rather than from the top of the lecture. #}
-    <a class="btn ghost" href="{{ url_for('fix_page', video_id=video.id) }}"
-       title="Play the lecture and correct the transcript">Fix transcript</a>
+    <a class="btn ghost" href="{{ url_for('fix_words_page') }}"
+       title="Fix a wrong word everywhere it appears">Fix a word</a>
     <button id="save-video" class="btn ghost star-btn {{ 'on' if saved_video }}" type="button"
             data-video="{{ video.id }}" title="Save this video to your library">
       <span class="star">{{ '★' if saved_video else '☆' }}</span> <span class="lbl">{{ 'Saved' if saved_video else 'Save' }}</span>
@@ -163,10 +163,6 @@
     {% else %}
       <span class="ts">{{ s.start_time|hhmmss }}</span>
     {% endif %}
-    {% if not operator %}
-    <a class="ts report" href="/feedback?about=%2Fvideo%2F{{ video.id }}%23t%3D{{ s.start_time|int }}"
-       title="This line is wrong">report</a>
-    {% endif %}
     <span class="text">
       <span class="roman" data-seg="{{ s.segment_id }}">{{ s.roman_text or '' }}</span>
       {% if s.urdu_text %}<span class="urdu" dir="rtl">{{ s.urdu_text }}</span>{% endif %}
@@ -195,16 +191,27 @@
       player = new YT.Player('player', {
         videoId: el.getAttribute('data-yt'),
         playerVars: { rel: 0, start: startAt, autoplay: startAt ? 1 : 0 },
-        events: { onReady: function () { window.VTPlayer = player; } },
+        events: { onReady: function () {
+          window.VTPlayer = player;
+          // #t=SECONDS or #tSECONDS (a "Read the transcript" deep link) seeks
+          // there once the player exists; the play-along loop below then
+          // lights that line on its own, same as any other click-to-seek.
+          var hm = location.hash.match(/^#t=?(\d+)/);
+          if (hm) doSeek(+hm[1]);
+        } },
       });
     };
   })();
+  function doSeek(t) {
+    if (!player || !player.seekTo) return;  // fall back to opening YouTube
+    player.seekTo(t, true);
+    player.playVideo();
+  }
   document.querySelectorAll('.seek').forEach(function (a) {
     a.addEventListener('click', function (e) {
-      if (!player || !player.seekTo) return;  // fall back to opening YouTube
+      if (!player || !player.seekTo) return;
       e.preventDefault();
-      player.seekTo(+a.getAttribute('data-t'), true);
-      player.playVideo();
+      doSeek(+a.getAttribute('data-t'));
     });
   });
 

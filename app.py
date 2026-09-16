@@ -102,7 +102,6 @@ _OPERATOR_ENDPOINTS = {
     "api_romanize",  # owner 2026-09-05: the LLM filler is not for visitors
     "api_save_video", "api_save_segment", "api_bookmark_delete", "api_bookmark_tag",
     "crawled_page",  # the crawl log is the owner's working list, not a public page
-    "fix_page",      # correcting a transcript is the owner's alone
     "fix_words_page",  # a word-wide fix touches every lecture at once, owner only
 }
 
@@ -192,6 +191,18 @@ def _hhmmss(seconds):
 
 
 app.jinja_env.filters["hhmmss"] = _hhmmss
+
+
+def _highlight_variants(text, variants):
+    """Escape `text` and wrap any of `variants` (whole word, case-insensitive)
+    in <mark> -- for /fix/words, so the owner sees exactly what will change."""
+    text = Markup.escape(text or "")
+    if not variants:
+        return text
+    pattern = _re.compile(
+        "|".join(r"(?<!\w)" + _re.escape(str(Markup.escape(v))) + r"(?!\w)" for v in variants),
+        _re.I)
+    return Markup(pattern.sub(lambda m: f"<mark>{m.group(0)}</mark>", str(text)))
 
 
 # A few common topics to seed exploration on the empty landing page.
@@ -660,81 +671,64 @@ def video(video_id):
     )
 
 
-@app.route("/video/<int:video_id>/fix", methods=["GET", "POST"])
-def fix_page(video_id):
-    """Correct what the machine misheard, with the recording beside it.
+@app.route("/fix/words", methods=["GET", "POST"])
+def fix_words_page():
+    """Find every line with a word, in any spelling, and fix it everywhere.
 
-    A line is read in three places -- the page, the search index's text, and
-    the index itself -- so corrections.apply writes all three at once. Only
-    changed lines are touched, and the previous wording is kept.
+    The owner types the CORRECT spelling; word_matches() finds every line
+    across the whole library carrying any variant of it (the same fold
+    search.py matches queries on), grouped for review with one player at
+    the top. Ticking lines and pressing Apply runs corrections.apply_word,
+    which writes the page, the search text and the index together -- same
+    as a single-line correction, just for many lines at once.
     """
     if not db.exists():
         abort(404)
     conn = db.connect()
     try:
-        meta = conn.execute(
-            "SELECT id, title, youtube_url FROM videos WHERE id = ?", (video_id,)).fetchone()
-        if meta is None:
-            abort(404)
-        saved = 0
-        if request.method == "POST":
+        w = (request.values.get("w") or "").strip()
+        error = None
+        if w and (" " in w or "\t" in w or len(w) > 40):
+            error, w = "one word at a time, please (max 40 characters)", ""
+        result = None
+        if request.method == "POST" and w:
             revert_id = request.form.get("revert", type=int)
             if revert_id is not None:
                 prior = corrections.last(conn, revert_id)
-                if prior is not None and corrections.apply(conn, revert_id, prior["was"], who="revert"):
-                    saved += 1
+                if prior is not None:
+                    corrections.apply(conn, revert_id, prior["was"], who="revert")
+                    conn.commit()
             else:
-                for field, value in request.form.items():
-                    if not field.startswith("s"):
-                        continue
-                    try:
-                        seg_id = int(field[1:])
-                    except ValueError:
-                        continue
-                    if corrections.apply(conn, seg_id, value, session.get("user") or "owner"):
-                        saved += 1
-            conn.commit()
-        start = request.args.get("t", type=int)
-        if start is None:
-            start = request.form.get("t", type=int) or 0
-        lines = corrections.window(conn, video_id, around=start)
+                action = request.form.get("action")
+                ids = request.form.getlist("seg", type=int) if action == "ticked" else None
+                result = corrections.apply_word(conn, w, ids=ids, who=session.get("user") or "owner")
+                if "error" not in result:
+                    conn.commit()
+        rows, variants, total = corrections.word_matches(conn, w) if w else ([], set(), 0)
+        remembered = corrections.recent(conn)
+        if remembered:
+            vids = {r["video_id"] for r in remembered if r["video_id"] is not None}
+            qm = ",".join("?" * len(vids)) if vids else ""
+            titles = dict(conn.execute(
+                f"SELECT id, title FROM videos WHERE id IN ({qm})", tuple(vids))) if vids else {}
+            for r in remembered:
+                r["title"] = titles.get(r["video_id"], "")
     finally:
         conn.close()
+    # group by lecture for the template, preserving the title-then-time order
+    # word_matches() already returned.
+    lectures = []
+    by_video = {}
+    for r in rows:
+        if r["video_id"] not in by_video:
+            by_video[r["video_id"]] = {"title": r["title"], "youtube_id": search.youtube_id(r["youtube_url"]),
+                                        "lines": []}
+            lectures.append(by_video[r["video_id"]])
+        by_video[r["video_id"]]["lines"].append(r)
     return render_template(
-        "fix.html", video={"id": meta[0], "title": meta[1]},
-        youtube_id=search.youtube_id(meta[2]), lines=lines, start=int(start or 0),
-        saved=saved, hhmmss=_hhmmss, no_store=True)
-
-
-@app.route("/fix/words", methods=["GET", "POST"])
-def fix_words_page():
-    """Fix a word everywhere it was misheard, across the whole library.
-
-    A wrong word does not repeat only in one lecture -- the same mis-hearing
-    (khasho for khusho) recurs across the corpus. This finds every line that
-    still has it and, on request, corrects all of them the same way a single
-    correction does: page, search text, and index together.
-    """
-    if not db.exists():
-        abort(404)
-    conn = db.connect()
-    try:
-        result = None
-        wrong = right = ""
-        if request.method == "POST":
-            wrong = (request.form.get("wrong") or "").strip()
-            right = (request.form.get("right") or "").strip()
-            action = request.form.get("action")
-            result = corrections.glossary_apply(
-                conn, wrong, right, who=session.get("user") or "owner",
-                dry=(action != "apply"))
-            if action == "apply" and "error" not in result:
-                conn.commit()
-        remembered = corrections.word_fixes(conn)
-    finally:
-        conn.close()
-    return render_template("fix_words.html", result=result, wrong=wrong, right=right,
-                            remembered=remembered, no_store=True)
+        "fix_words.html", w=w, error=error, result=result, lectures=lectures,
+        variants=sorted(variants), total=total, shown=len(rows),
+        remembered=remembered, highlight=_highlight_variants, hhmmss=_hhmmss, no_store=True)
 
 
 @app.route("/video/<int:video_id>/export.docx")
@@ -1158,10 +1152,7 @@ def dashboard():
 
 @app.route("/feedback")
 def feedback_page():
-    # ?about=<path> prefills which page/line this is about -- the "report a
-    # wrong line" link on a transcript, so a person does not have to paste it.
-    about = (request.args.get("about") or "")[:300]
-    return render_template("feedback.html", sent=False, about=about)
+    return render_template("feedback.html", sent=False)
 
 
 @app.route("/api/feedback", methods=["POST"])

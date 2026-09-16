@@ -89,6 +89,17 @@ def history(conn, video_id, limit=200):
                 "WHERE video_id = ? ORDER BY id DESC LIMIT ?", (video_id, limit))]
 
 
+def recent(conn, limit=30):
+    """Corrections across the whole library, newest first -- history()'s
+    lecture-agnostic twin, same table, same ordering, just no video filter."""
+    ensure_schema(conn)
+    return [{"id": r[0], "segment_id": r[1], "video_id": r[2], "was": r[3], "now": r[4],
+             "who": r[5], "at": r[6]}
+            for r in conn.execute(
+                "SELECT id, segment_id, video_id, was, now, who, at FROM corrections "
+                "ORDER BY id DESC LIMIT ?", (limit,))]
+
+
 def last(conn, seg_id):
     """The most recent correction of one line, or None."""
     ensure_schema(conn)
@@ -101,99 +112,97 @@ def last(conn, seg_id):
             "who": row[4], "at": row[5]}
 
 
-def window(conn, video_id, around=None, span=120, limit=60):
-    """The lines to put in front of a corrector.
+_WORD_RE = re.compile(r"[A-Za-z']+")
 
-    `around` is a second in the lecture -- the moment a reader questioned. The
-    window opens a little before it so the sentence has its run-up, and runs
-    `span` seconds on. With no second, the lecture starts from the top.
+
+def _human_touched(conn, seg_id):
+    """True when the latest correction on this line was a person's judgement
+    call, not a glossary fix or a revert -- the one guard a bulk word fix
+    must never override."""
+    prior = last(conn, seg_id)
+    return (prior is not None and prior["who"] is not None and
+            not str(prior["who"]).startswith("glossary:") and prior["who"] != "revert")
+
+
+def word_matches(conn, word, limit=500):
+    """Every line in the library that has `word` in any variant spelling.
+
+    Variant spelling is whatever normalize.py already folds together (v/w,
+    doubled letters, diacritics) -- the same fold search.py matches queries
+    on, so this finds exactly what a seeker's search would. Returns
+    (rows, variants, total): rows capped at `limit`, ordered by lecture
+    title then start_time; variants is the set of actual spellings found
+    (used both to highlight and to know what to replace).
+
+    A line a human corrected by hand is still listed (so the owner can see
+    it) but flagged "human" -- the caller must never offer it for a bulk fix.
     """
-    start = max(0.0, float(around) - 20) if around is not None else 0.0
     ensure_schema(conn)
-    rows = conn.execute(
-        "SELECT id, start_time, COALESCE(NULLIF(TRIM(roman_clean), ''), roman_text), "
-        "       urdu_text, roman_clean IS NOT NULL AND TRIM(roman_clean) != '' "
-        "FROM segments WHERE video_id = ? AND start_time >= ? AND start_time <= ? "
-        "ORDER BY start_time LIMIT ?",
-        (video_id, start, start + span, limit)).fetchall()
-    # "was": the wording before the latest correction, so an Undo button on a
-    # corrected line knows what to put back -- one row per segment, newest first.
-    was = {}
-    if rows:
-        ids = [r[0] for r in rows]
-        qm = ",".join("?" * len(ids))
-        for seg_id, prev in conn.execute(
-                f"SELECT segment_id, was FROM corrections WHERE segment_id IN ({qm}) "
-                f"AND id IN (SELECT MAX(id) FROM corrections WHERE segment_id IN ({qm}) "
-                f"GROUP BY segment_id)", ids + ids):
-            was[seg_id] = prev
-    return [{"id": r[0], "t": float(r[1] or 0), "text": r[2] or "", "urdu": r[3] or "",
-             "corrected": bool(r[4]), "was": was.get(r[0], "")} for r in rows]
-
-
-def glossary_apply(conn, wrong, right, who="owner", dry=False):
-    """Fix one word everywhere the search index can find it.
-
-    `dry=True` reports what would change without writing anything. A line a
-    human corrected by hand (its latest `corrections.who` is neither
-    "glossary:..." nor "revert") is left alone -- the glossary must never
-    overwrite a human's judgement call.
-    """
-    wrong = (wrong or "").strip()
-    right = (right or "").strip()
-    if not wrong or not right:
-        return {"error": "both words are required"}
-    if " " in wrong or " " in right or "\t" in wrong or "\t" in right:
-        return {"error": "one word at a time, please"}
-    if wrong.lower() == right.lower():
-        return {"error": "the two words are the same"}
-
-    ensure_schema(conn)
-    key = normalize.normalize(wrong)
+    key = normalize.normalize(word)
     if not key or " " in key:
-        return {"error": "not a single searchable word"}
-    pattern = re.compile(r"(?<!\w)" + re.escape(wrong) + r"(?!\w)", re.I)
+        return [], set(), 0
+    cand = conn.execute(
+        "SELECT s.id, s.video_id, v.title, v.youtube_url, s.start_time, "
+        "COALESCE(NULLIF(TRIM(s.roman_clean),''), s.roman_text) "
+        "FROM segments_fts f JOIN segments s ON s.id = f.rowid JOIN videos v ON v.id = s.video_id "
+        "WHERE segments_fts MATCH ? ORDER BY v.title, s.start_time", (key,)).fetchall()
+    rows, variants = [], set()
+    for seg_id, video_id, title, yt_url, start, text in cand:
+        text = text or ""
+        found = [w for w in _WORD_RE.findall(text) if normalize.normalize(w) == key]
+        if not found:
+            continue  # FTS is a prefilter -- a real word boundary may not match
+        variants.update(w.lower() for w in found)
+        rows.append({"segment_id": seg_id, "video_id": video_id, "title": title,
+                     "youtube_url": yt_url, "start_time": start, "text": text,
+                     "matched": found, "human": _human_touched(conn, seg_id)})
+    return rows[:limit], variants, len(rows)
+
+
+def apply_word(conn, word, ids=None, who="owner"):
+    """Replace every variant spelling of `word` with `word` itself.
+
+    `ids`, when given, restricts the fix to those segment ids (the owner's
+    ticked subset) -- always intersected with a fresh word_matches() lookup,
+    never the client's say-so alone. Human-corrected lines are always
+    skipped. One word_fixes row per variant actually replaced.
+    """
+    word = (word or "").strip()
+    if not word or " " in word or "\t" in word:
+        return {"error": "one word at a time, please"}
+    rows, _variants, _total = word_matches(conn, word)
+    if ids is not None:
+        ids = set(ids)
+        rows = [r for r in rows if r["segment_id"] in ids]
 
     def _replacement(m):
-        word = m.group(0)
-        rep = right
-        if word[:1].isupper():
-            rep = rep[:1].upper() + rep[1:]
-        return rep
+        rep = word
+        return rep[:1].upper() + rep[1:] if m.group(0)[:1].isupper() else rep
 
-    changed, skipped, lecture_ids, sample = [], 0, set(), []
-    for (seg_id,) in conn.execute(
-            "SELECT rowid FROM segments_fts WHERE segments_fts MATCH ?", (key,)).fetchall():
-        found = current(conn, seg_id)
-        if found is None:
-            continue
-        video_id, text = found
-        new_text, n = pattern.subn(_replacement, text)
-        if n == 0:  # FTS is a prefilter -- a real word boundary may not match
-            continue
-        prior = last(conn, seg_id)
-        if prior is not None and prior["who"] not in (None,) and \
-                not str(prior["who"]).startswith("glossary:") and prior["who"] != "revert":
+    changed, skipped, lecture_ids, used_variants = [], 0, set(), set()
+    for r in rows:
+        if r["human"]:
             skipped += 1
             continue
-        changed.append((seg_id, video_id, text, new_text))
-        lecture_ids.add(video_id)
-        if len(sample) < 5:
-            sample.append({"segment_id": seg_id, "before": text, "after": new_text})
+        pattern = re.compile(
+            "|".join(r"(?<!\w)" + re.escape(v) + r"(?!\w)" for v in set(r["matched"])), re.I)
+        new_text, n = pattern.subn(_replacement, r["text"])
+        if n == 0 or new_text == r["text"]:
+            continue
+        changed.append((r["segment_id"], new_text))
+        lecture_ids.add(r["video_id"])
+        used_variants.update(v.lower() for v in r["matched"] if v.lower() != word.lower())
 
-    result = {"lines": len(changed), "lectures": len(lecture_ids),
-              "skipped_human": skipped, "sample": sample}
-    if dry:
-        return result
-
-    who_tag = f"glossary:{wrong}"
-    for seg_id, video_id, text, new_text in changed:
-        apply(conn, seg_id, new_text, who=who_tag)
-    conn.execute(
-        "INSERT INTO word_fixes (wrong, right, who, at) VALUES (?, ?, ?, ?) "
-        "ON CONFLICT(wrong) DO UPDATE SET right=excluded.right, who=excluded.who, at=excluded.at",
-        (wrong, right, who, datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")))
-    return result
+    for seg_id, new_text in changed:
+        apply(conn, seg_id, new_text, who=f"glossary:{word}")
+    if used_variants:
+        at = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
+        for variant in used_variants:
+            conn.execute(
+                "INSERT INTO word_fixes (wrong, right, who, at) VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(wrong) DO UPDATE SET right=excluded.right, who=excluded.who, at=excluded.at",
+                (variant, word, who, at))
+    return {"lines": len(changed), "lectures": len(lecture_ids), "skipped_human": skipped}
 
 
 def word_fixes(conn):

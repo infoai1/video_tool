@@ -83,8 +83,7 @@ def _titles(paths, roman_db, qa_db):
             qm = ",".join("?" * len(lec))
             for vid, title in db.execute(
                     f"SELECT id, title FROM videos WHERE id IN ({qm})", lec):
-                out[f"/video/{vid}"] = ("Lecture", title or "Untitled lecture", 0,
-                                       f"/video/{vid}/fix")
+                out[f"/video/{vid}"] = ("Lecture", title or "Untitled lecture", 0)
             db.close()
         except sqlite3.Error:
             pass
@@ -97,8 +96,7 @@ def _titles(paths, roman_db, qa_db):
                     f"WHERE id IN ({qm})", qa):
                 out[f"/clips/qa/{uid}"] = ("Answer",
                                            f"{qt or 'A question'} — {ttl or ''}".strip(" —"),
-                                           int(start or 0),
-                                           f"/video/{vid}/fix?t={int(start or 0)}" if vid else "")
+                                           int(start or 0))
             db.close()
         except sqlite3.Error:
             pass
@@ -136,10 +134,8 @@ def rows(roman_db, qa_db):
     meta = _titles(hits, roman_db, qa_db)
     out = []
     for h in hits.values():
-        kind, title, start, fix = meta.get(h["path"], ("Page", h["path"], 0, ""))
-        if kind == "Lecture" and fix:
-            fix = f"{fix}?t=0"
-        out.append({**h, "kind": kind, "title": title, "start": start, "fix": fix,
+        kind, title, start = meta.get(h["path"], ("Page", h["path"], 0))
+        out.append({**h, "kind": kind, "title": title, "start": start,
                     "who": ", ".join(f"{b} ×{n}" for b, n in
                                      sorted(h["bots"].items(), key=lambda kv: -kv[1]))})
     out.sort(key=lambda r: (-r["n"], r["title"]))

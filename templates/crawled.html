@@ -35,7 +35,8 @@
   <p class="cr-sub">The transcripts are machine-made, so some lines carry the wrong word.
     These are the pages search engines and AI assistants have actually fetched — the ones
     whose words are being quoted now, and so the ones worth correcting first. Open one,
-    play it from the second it starts, and read along.</p>
+    play it from the second it starts, and read along. Type a wrong word on
+    <a href="/fix/words">/fix/words</a> to see every line that has it.</p>
   {% if data.visits %}
   <div class="cr-tot">
     {% for bot, n in data.totals.items() %}<span class="cr-pill">{{ bot }} · {{ n }}</span>{% endfor %}
@@ -56,7 +57,6 @@
       <div class="cr-who">{{ r.who }}</div>
       <div class="cr-acts">
         <a href="{{ r.path }}{% if r.start %}#t={{ r.start }}{% endif %}">Read the transcript</a>
-        {% if r.fix %}<a href="{{ r.fix }}">Play it and fix the words</a>{% endif %}
         <span class="cr-when">last read {{ r.last }}</span>
       </div>
     </div>

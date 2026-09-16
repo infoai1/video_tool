@@ -15,48 +15,106 @@
   .fw-err{color:#b00;font-size:14px;margin:6px 0}
   .fw-ok{margin:10px 0;padding:10px 14px;border-radius:10px;
     background:var(--accent-soft,rgba(0,128,96,.12));color:var(--accent);font-size:14px;max-width:64ch}
-  .fw-sample{border-collapse:collapse;width:100%;max-width:760px;font-size:13.5px;margin-top:8px}
-  .fw-sample td{padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
-  table.fw-list{border-collapse:collapse;width:100%;max-width:640px;font-size:14px;margin-top:18px}
+  .fw-variants{font-size:13.5px;color:var(--muted);margin:4px 0 14px}
+  .fw-player{max-width:640px;aspect-ratio:16/9;background:#000;border-radius:10px;overflow:hidden;
+    margin:0 0 16px;display:none}
+  .fw-player.on{display:block}
+  .fw-player iframe{width:100%;height:100%;border:0}
+  .fw-lecture{margin:0 0 20px;max-width:820px}
+  .fw-lecture h3{font-size:15px;margin:0 0 6px}
+  .fw-row{display:flex;gap:10px;align-items:baseline;padding:4px 0;font-size:14px}
+  .fw-row.human{color:var(--muted)}
+  .fw-row .fw-t{color:var(--muted);font-variant-numeric:tabular-nums;font-size:12.5px;white-space:nowrap}
+  .fw-row .fw-play{border:0;background:none;cursor:pointer;color:var(--accent);padding:0 2px}
+  .fw-row.playing{background:var(--accent-soft,rgba(0,128,96,.10));border-radius:6px}
+  .fw-row mark{background:#ffe08a;color:inherit;border-radius:3px;padding:0 2px}
+  .fw-replace{font-size:14px;margin:14px 0}
+  table.fw-list{border-collapse:collapse;width:100%;max-width:760px;font-size:13.5px;margin-top:10px}
   table.fw-list td, table.fw-list th{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left}
 </style>
 <div class="fw-head">
   <h1 class="fw-h1">Fix a word everywhere</h1>
-  <p class="fw-sub">One correction, applied to every line the search index can find with it.
-    A line a human already corrected by hand is left alone.</p>
+  <p class="fw-sub">Type the correct spelling. Every line in the library carrying any
+    variant spelling of it shows up below, grouped by lecture, so you can play, check,
+    and fix them all at once. A line already corrected by hand is left alone.</p>
 </div>
 
-<form method="post" class="fw-form">
-  <label>Wrong <input type="text" name="wrong" value="{{ wrong }}" required></label>
-  <label>Right <input type="text" name="right" value="{{ right }}" required></label>
-  <button type="submit" name="action" value="preview" class="ghost">Preview</button>
-  <button type="submit" name="action" value="apply">Apply</button>
+<form method="get" class="fw-form">
+  <label>Word <input type="text" name="w" value="{{ w }}" maxlength="40" required></label>
+  <button type="submit" class="ghost">Find</button>
 </form>
+{% if error %}<p class="fw-err">{{ error }}</p>{% endif %}
 
 {% if result %}
   {% if result.error %}
     <p class="fw-err">{{ result.error }}</p>
   {% else %}
-    <p class="fw-ok">{{ result.lines }} line{{ '' if result.lines == 1 else 's' }} in
+    <p class="fw-ok">Replaced in {{ result.lines }} line{{ '' if result.lines == 1 else 's' }} across
       {{ result.lectures }} lecture{{ '' if result.lectures == 1 else 's' }}
-      {{ 'changed' if request.form.get('action') == 'apply' else 'would change' }}
-      · {{ result.skipped_human }} skipped (corrected by hand)</p>
-    {% if result.sample %}
-    <table class="fw-sample">
-      {% for s in result.sample %}
-      <tr><td>#{{ s.segment_id }}</td><td>{{ s.before }}</td><td>&rarr;</td><td>{{ s.after }}</td></tr>
-      {% endfor %}
-    </table>
-    {% endif %}
+      · {{ result.skipped_human }} skipped, fixed by hand</p>
   {% endif %}
 {% endif %}
 
+{% if w and lectures %}
+<p class="fw-variants">Spellings found: {{ variants|join(', ') }}
+  {% if total > shown %}&middot; showing {{ shown }} of {{ total }}{% endif %}</p>
+
+<div class="fw-player" id="wr-player"></div>
+
+<form method="post">
+  <input type="hidden" name="w" value="{{ w }}">
+  {% for lec in lectures %}
+  <div class="fw-lecture">
+    <h3>{{ lec.title }}</h3>
+    {% for r in lec.lines %}
+    <div class="fw-row{% if r.human %} human{% endif %}" data-yt="{{ lec.youtube_id }}" data-t="{{ r.start_time|int }}">
+      {% if not r.human %}<input type="checkbox" name="seg" value="{{ r.segment_id }}" checked>{% endif %}
+      <button type="button" class="fw-play" onclick="wrPlay('{{ lec.youtube_id }}', {{ r.start_time|int }}, this.closest('.fw-row'))" title="Play here">&#9658;</button>
+      <span class="fw-t">{{ r.start_time|hhmmss }}</span>
+      <span>{{ highlight(r.text, variants) }}{% if r.human %} &mdash; fixed by hand{% endif %}</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% endfor %}
+  <p class="fw-replace">Replace each highlighted word with: <b>{{ w }}</b></p>
+  <button type="submit" name="action" value="ticked" class="ghost">Apply to ticked</button>
+  <button type="submit" name="action" value="all">Apply to all</button>
+</form>
+{% elif w %}
+<p class="fw-sub">No line in the library has that word, in any spelling we can find.</p>
+{% endif %}
+
 {% if remembered %}
+<h3 class="fw-h1" style="font-size:16px;margin-top:28px">Recent fixes</h3>
 <table class="fw-list">
-  <tr><th>Wrong</th><th>Right</th><th>By</th><th>When</th></tr>
+  <tr><th>When</th><th>Lecture</th><th>Was &rarr; Now</th><th>By</th><th></th></tr>
   {% for r in remembered %}
-  <tr><td>{{ r.wrong }}</td><td>{{ r.right }}</td><td>{{ r.who }}</td><td>{{ r.at }}</td></tr>
+  <tr>
+    <td>{{ r.at }}</td>
+    <td>{{ r.title }}</td>
+    <td>{{ r.was }} &rarr; {{ r.now }}</td>
+    <td>{{ r.who }}</td>
+    <td>
+      <form method="post" style="display:inline">
+        <input type="hidden" name="w" value="{{ w }}">
+        <button type="submit" name="revert" value="{{ r.segment_id }}" class="ghost">Undo</button>
+      </form>
+    </td>
+  </tr>
   {% endfor %}
 </table>
 {% endif %}
+
+<script>
+window.wrPlay = function (yid, t, rowEl) {
+  var p = document.getElementById('wr-player');
+  if (!p || !yid) return;
+  p.innerHTML = '<iframe src="https://www.youtube.com/embed/' + yid + '?start=' + (t || 0) +
+    '&autoplay=1&rel=0" allow="autoplay; encrypted-media" allowfullscreen></iframe>';
+  p.classList.add('on');
+  document.querySelectorAll('.fw-row.playing').forEach(function (el) { el.classList.remove('playing'); });
+  if (rowEl) rowEl.classList.add('playing');
+  if (window.innerWidth < 980) p.scrollIntoView({ behavior: 'smooth', block: 'start' });
+};
+</script>
 {% endblock %}

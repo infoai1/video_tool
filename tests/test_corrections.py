@@ -10,9 +10,11 @@ import corrections
 def conn():
     db = sqlite3.connect(":memory:")
     db.executescript(
+        "CREATE TABLE videos (id INTEGER PRIMARY KEY, title TEXT, youtube_url TEXT);"
         "CREATE TABLE segments (id INTEGER PRIMARY KEY, video_id INT, start_time REAL,"
         " roman_text TEXT, roman_clean TEXT, roman_norm TEXT, urdu_text TEXT);"
         "CREATE VIRTUAL TABLE segments_fts USING fts5(roman_norm, tokenize='unicode61');"
+        "INSERT INTO videos (id, title, youtube_url) VALUES (7, 'Lecture Seven', 'https://y/abcdefghijk');"
         "INSERT INTO segments (id, video_id, start_time, roman_text, roman_norm, urdu_text) VALUES"
         " (1, 7, 3475.0, 'namaz hai khasho ki zuban mein', 'namaz hai khasho ki zuban mein', 'اردو'),"
         " (2, 7, 3480.0, 'dusri line', 'dusri line', ''),"
@@ -72,74 +74,6 @@ def test_a_correction_can_itself_be_corrected(conn):
     assert _matches(conn, "koshish") == [1]    # indexed once, not twice
 
 
-def test_the_window_opens_before_the_moment_asked_about(conn):
-    lines = corrections.window(conn, 7, around=3480, span=120)
-    ids = [l["id"] for l in lines]
-    # 3475 comes before the moment asked about and is still shown -- a sentence
-    # needs its run-up; 3600 is past the end of the window.
-    assert ids == [1, 2]
-    assert lines[0]["urdu"] == "اردو"
-    assert lines[0]["corrected"] is False
-
-
-def test_the_window_marks_what_has_been_corrected(conn):
-    corrections.apply(conn, 1, "namaz hai khusho ki zuban mein")
-    lines = corrections.window(conn, 7, around=3475)
-    assert lines[0]["corrected"] is True
-    assert lines[1]["corrected"] is False
-
-
-def test_with_no_moment_the_lecture_starts_at_the_top(conn):
-    lines = corrections.window(conn, 7, around=None, span=100)
-    assert lines == [] or lines[0]["t"] < 100
-
-
-def test_glossary_fixes_matching_lines_only(conn):
-    r = corrections.glossary_apply(conn, "line", "row")
-    assert r["lines"] == 2      # "dusri line" and "bahut baad ki line"
-    assert r["lectures"] == 1
-    assert r["skipped_human"] == 0
-
-
-def test_glossary_is_whole_word(conn):
-    conn.execute("INSERT INTO segments (id, video_id, start_time, roman_text, roman_norm) "
-                 "VALUES (4, 7, 3700.0, 'yeh topic hai toh sahi', 'yeh topic hai toh sahi')")
-    conn.execute("INSERT INTO segments_fts (rowid, roman_norm) VALUES (4, 'yeh topic hai toh sahi')")
-    r = corrections.glossary_apply(conn, "to", "too", dry=True)
-    assert r["lines"] == 0      # "topic" and "toh" must not be touched
-
-
-def test_glossary_keeps_capitalisation(conn):
-    conn.execute("INSERT INTO segments (id, video_id, start_time, roman_text, roman_norm) "
-                 "VALUES (5, 7, 3800.0, 'Khasho se namaz parhna', 'khasho se namaz parhna')")
-    conn.execute("INSERT INTO segments_fts (rowid, roman_norm) VALUES (5, 'khasho se namaz parhna')")
-    r = corrections.glossary_apply(conn, "khasho", "khusho")
-    [s] = [x for x in r["sample"] if x["segment_id"] == 5]
-    assert s["after"] == "Khusho se namaz parhna"
-
-
-def test_glossary_dry_run_writes_nothing(conn):
-    corrections.glossary_apply(conn, "line", "row", dry=True)
-    assert corrections.history(conn, 7) == []
-    assert corrections.word_fixes(conn) == []
-
-
-def test_glossary_skips_a_hand_corrected_line(conn):
-    corrections.apply(conn, 2, "dusri sataar", who="junaid")
-    r = corrections.glossary_apply(conn, "sataar", "line")
-    assert r["skipped_human"] == 1
-    assert r["lines"] == 0
-
-
-def test_glossary_apply_writes_a_word_fix_and_corrections(conn):
-    r = corrections.glossary_apply(conn, "line", "row")
-    fixes = corrections.word_fixes(conn)
-    assert fixes[0]["wrong"] == "line" and fixes[0]["right"] == "row"
-    hist = corrections.history(conn, 7)
-    assert all(h["who"] == "glossary:line" for h in hist)
-    assert len(hist) == r["lines"]
-
-
 def test_apply_then_revert_restores_everything(conn):
     corrections.apply(conn, 1, "namaz hai khusho ki zuban mein")
     prior = corrections.last(conn, 1)
@@ -153,8 +87,94 @@ def test_apply_then_revert_restores_everything(conn):
     assert hist[0]["who"] == "revert"
 
 
-def test_window_carries_the_previous_wording(conn):
-    corrections.apply(conn, 1, "namaz hai khusho ki zuban mein")
-    lines = corrections.window(conn, 7, around=3475)
-    assert lines[0]["was"] == "namaz hai khasho ki zuban mein"
-    assert lines[1]["was"] == ""
+def test_recent_is_newest_first_across_lectures(conn):
+    corrections.apply(conn, 1, "one")
+    corrections.apply(conn, 2, "two")
+    r = corrections.recent(conn)
+    assert [x["now"] for x in r] == ["two", "one"]
+
+
+# --- word_matches / apply_word: variant-spelling bulk fix ---------------------
+
+def test_word_matches_finds_variant_spellings(conn):
+    # "line" and "liine" both fold to the same normalized key.
+    conn.execute("INSERT INTO segments (id, video_id, start_time, roman_text, roman_norm) "
+                 "VALUES (4, 7, 3700.0, 'ek aur liine hai', 'ek aur line hai')")
+    conn.execute("INSERT INTO segments_fts (rowid, roman_norm) VALUES (4, 'ek aur line hai')")
+    rows, variants, total = corrections.word_matches(conn, "line")
+    assert total == 3   # segments 2, 3, 4
+    assert variants == {"line", "liine"}
+    ids = {r["segment_id"] for r in rows}
+    assert ids == {2, 3, 4}
+
+
+def test_word_matches_is_whole_word(conn):
+    conn.execute("INSERT INTO segments (id, video_id, start_time, roman_text, roman_norm) "
+                 "VALUES (4, 7, 3700.0, 'yeh topic hai toh sahi', 'yeh topic hai toh sahi')")
+    conn.execute("INSERT INTO segments_fts (rowid, roman_norm) VALUES (4, 'yeh topic hai toh sahi')")
+    rows, _variants, total = corrections.word_matches(conn, "to")
+    assert total == 0      # "topic" and "toh" must not be touched
+
+
+def test_apply_word_replaces_only_the_matched_variant_case_preserved(conn):
+    conn.execute("INSERT INTO segments (id, video_id, start_time, roman_text, roman_norm) "
+                 "VALUES (5, 7, 3800.0, 'Khasho se namaz parhna', 'khasho se namaz parhna')")
+    conn.execute("INSERT INTO segments_fts (rowid, roman_norm) VALUES (5, 'khasho se namaz parhna')")
+    r = corrections.apply_word(conn, "khasho")
+    shown = conn.execute(
+        "SELECT COALESCE(NULLIF(TRIM(roman_clean),''), roman_text) FROM segments WHERE id=5"
+    ).fetchone()[0]
+    assert shown == "Khasho se namaz parhna"   # already correct, whole-word match, nothing to change
+    assert r["lines"] == 0
+
+
+def test_apply_word_fixes_a_real_variant(conn):
+    conn.execute("INSERT INTO segments (id, video_id, start_time, roman_text, roman_norm) "
+                 "VALUES (5, 7, 3800.0, 'Namaaz se pehle wuzu', 'namaz se pehle wuzu')")
+    conn.execute("INSERT INTO segments_fts (rowid, roman_norm) VALUES (5, 'namaz se pehle wuzu')")
+    r = corrections.apply_word(conn, "namaz")
+    shown = conn.execute(
+        "SELECT COALESCE(NULLIF(TRIM(roman_clean),''), roman_text) FROM segments WHERE id=5"
+    ).fetchone()[0]
+    assert shown == "Namaz se pehle wuzu"   # case of the original kept
+    assert r["lines"] == 1
+    fixes = corrections.word_fixes(conn)
+    assert fixes[0] == {"wrong": "namaaz", "right": "namaz", "who": "owner", "at": fixes[0]["at"]}
+
+
+def test_apply_word_ticked_subset_only(conn):
+    conn.execute("INSERT INTO segments (id, video_id, start_time, roman_text, roman_norm) "
+                 "VALUES (4, 7, 3700.0, 'ek aur liine hai', 'ek aur line hai'),"
+                 " (6, 7, 3900.0, 'dusri liine bhi', 'dusri line bhi')")
+    conn.execute("INSERT INTO segments_fts (rowid, roman_norm) VALUES"
+                 " (4, 'ek aur line hai'), (6, 'dusri line bhi')")
+    r = corrections.apply_word(conn, "line", ids=[4])
+    assert r["lines"] == 1
+    assert corrections.history(conn, 7)[0]["segment_id"] == 4
+    # segment 6 (liine), not ticked, untouched
+    assert conn.execute("SELECT roman_text FROM segments WHERE id=6").fetchone()[0] == "dusri liine bhi"
+
+
+def test_apply_word_skips_a_hand_corrected_line(conn):
+    corrections.apply(conn, 2, "dusri seedhi line", who="junaid")   # a person's own judgement call
+    r = corrections.apply_word(conn, "line")
+    assert r["skipped_human"] == 1
+    assert r["lines"] == 0
+
+
+def test_apply_word_writes_a_word_fix_and_corrections(conn):
+    conn.execute("INSERT INTO segments (id, video_id, start_time, roman_text, roman_norm) "
+                 "VALUES (4, 7, 3700.0, 'ek aur liine hai', 'ek aur line hai')")
+    conn.execute("INSERT INTO segments_fts (rowid, roman_norm) VALUES (4, 'ek aur line hai')")
+    r = corrections.apply_word(conn, "line")
+    fixes = corrections.word_fixes(conn)
+    assert {"wrong": "liine", "right": "line"} in [
+        {"wrong": f["wrong"], "right": f["right"]} for f in fixes]
+    hist = corrections.history(conn, 7)
+    assert all(h["who"] == "glossary:line" for h in hist)
+    assert len(hist) == r["lines"]
+
+
+def test_word_matches_rejects_more_than_one_word(conn):
+    rows, variants, total = corrections.word_matches(conn, "two words")
+    assert rows == [] and variants == set() and total == 0
