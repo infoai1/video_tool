@@ -13,7 +13,29 @@
 <section class="c3">
   <div class="c3-card">
     <img class="c3-port" src="{{ url_for('static', filename='maulana-1280.webp') }}" srcset="{{ url_for('static', filename='maulana-800.webp') }} 800w, {{ url_for('static', filename='maulana-1280.webp') }} 1280w" sizes="(min-width:1024px) 58vw, 100vw" width="1280" height="720" alt="" fetchpriority="high">
-    <h1 class="c3-big">What are you going through?</h1>
+    <h1 class="c3-big" aria-label="What are you going through?"><span class="c3-rot" aria-hidden="true">What</span> are you going through?</h1>
+    <script>
+    (function(){
+      var el=document.querySelector('.c3-big .c3-rot');if(!el)return;
+      var words=['What','Why'],i=0;
+      var cs=getComputedStyle(el),font=cs.fontWeight+' '+cs.fontSize+' '+cs.fontFamily;
+      var probe=document.createElement('span');
+      probe.style.cssText='position:absolute;visibility:hidden;white-space:nowrap;text-transform:'+cs.textTransform+';font:'+font+';letter-spacing:'+cs.letterSpacing;
+      document.body.appendChild(probe);
+      var w=0;words.forEach(function(x){probe.textContent=x;if(probe.offsetWidth>w)w=probe.offsetWidth;});
+      document.body.removeChild(probe);
+      if(w)el.style.minWidth=Math.ceil(w)+'px';
+      if(window.matchMedia&&matchMedia('(prefers-reduced-motion:reduce)').matches)return;
+      function next(){el.classList.add('is-out');
+        setTimeout(function(){i=(i+1)%words.length;var word=words[i];
+          el.textContent=word;el.classList.remove('is-out');
+          el.classList.toggle('c3-why',word==='Why');
+          el.classList.remove('is-in');void el.offsetWidth;el.classList.add('is-in');
+          setTimeout(next,word==='Why'?3600:2400);
+        },400);}
+      setTimeout(next,2600);
+    })();
+    </script>
     <p class="c3-sub">Maulana Wahiduddin Khan answered thousands of life questions. <em>Ask yours.</em></p>
     <p class="c3-expl">A search engine over his 2,242 lectures. The video opens at the exact moment he answers.</p>
     <form class="c3-srch" id="q" method="get" action="{{ url_for('index') }}" role="search">

@@ -852,3 +852,17 @@ body.landing-page main.landing { max-width: 1240px; padding-top: 0; padding-bott
   .c3-gl { justify-content: flex-start; }
 }
 @media (max-width: 760px) { body.landing-page main.landing { padding-left: .9rem; padding-right: .9rem; } .c3-card { margin-top: 10px; } }
+
+/* Landing hero: the first word reframes from "What" to "Why" */
+.c3-rot{display:inline-block;text-align:left;color:var(--accent,currentColor);position:relative;white-space:nowrap;
+  transition:opacity .4s ease,transform .4s cubic-bezier(.2,.7,.2,1),filter .4s ease}
+.c3-rot::after{content:"";position:absolute;left:0;right:.06em;bottom:-.02em;height:.06em;background:currentColor;border-radius:2px;
+  opacity:.25;transform-origin:left;transition:opacity .4s ease}
+.c3-rot.is-out{opacity:0;transform:translateY(-.34em) scale(.92);filter:blur(6px)}
+.c3-rot.is-in{animation:c3RotIn .52s cubic-bezier(.2,.8,.2,1)}
+@keyframes c3RotIn{0%{opacity:0;transform:translateY(.4em) scale(.84);filter:blur(6px)}
+  60%{opacity:1;filter:blur(0)}100%{transform:translateY(0) scale(1)}}
+.c3-rot.c3-why{text-shadow:0 0 .5em color-mix(in srgb,var(--accent,currentColor) 55%,transparent)}
+.c3-rot.c3-why::after{opacity:.7;animation:c3RotLine .5s ease}
+@keyframes c3RotLine{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+@media(prefers-reduced-motion:reduce){.c3-rot{transition:none}.c3-rot.is-in{animation:none}}
