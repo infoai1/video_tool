@@ -63,6 +63,10 @@
     </div>
 
     {% if operator %}
+    {# The owner's way in to correcting what the machine misheard, at the
+       moment being read rather than from the top of the lecture. #}
+    <a class="btn ghost" href="{{ url_for('fix_page', video_id=video.id) }}"
+       title="Play the lecture and correct the transcript">Fix transcript</a>
     <button id="save-video" class="btn ghost star-btn {{ 'on' if saved_video }}" type="button"
             data-video="{{ video.id }}" title="Save this video to your library">
       <span class="star">{{ '★' if saved_video else '☆' }}</span> <span class="lbl">{{ 'Saved' if saved_video else 'Save' }}</span>

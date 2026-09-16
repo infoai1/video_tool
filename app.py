@@ -17,6 +17,7 @@ import re as _re
 _re_mwk = _re.compile(r"\s*(by\s+)?Maulana\s+Wahiduddin\s+Khan\s*", _re.I)
 
 import config
+import corrections
 import crawled
 import db
 import export
@@ -101,6 +102,7 @@ _OPERATOR_ENDPOINTS = {
     "api_romanize",  # owner 2026-09-05: the LLM filler is not for visitors
     "api_save_video", "api_save_segment", "api_bookmark_delete", "api_bookmark_tag",
     "crawled_page",  # the crawl log is the owner's working list, not a public page
+    "fix_page",      # correcting a transcript is the owner's alone
 }
 
 
@@ -679,6 +681,46 @@ def video(video_id):
         q=q, matched_ids=matched_ids, roman_terms=roman_terms, urdu_terms=urdu_terms,
         saved_video=saved["video"], saved_segments=set(saved["segments"]),
     )
+
+
+@app.route("/video/<int:video_id>/fix", methods=["GET", "POST"])
+def fix_page(video_id):
+    """Correct what the machine misheard, with the recording beside it.
+
+    A line is read in three places -- the page, the search index's text, and
+    the index itself -- so corrections.apply writes all three at once. Only
+    changed lines are touched, and the previous wording is kept.
+    """
+    if not db.exists():
+        abort(404)
+    conn = db.connect()
+    try:
+        meta = conn.execute(
+            "SELECT id, title, youtube_url FROM videos WHERE id = ?", (video_id,)).fetchone()
+        if meta is None:
+            abort(404)
+        saved = 0
+        if request.method == "POST":
+            for field, value in request.form.items():
+                if not field.startswith("s"):
+                    continue
+                try:
+                    seg_id = int(field[1:])
+                except ValueError:
+                    continue
+                if corrections.apply(conn, seg_id, value, session.get("user") or "owner"):
+                    saved += 1
+            conn.commit()
+        start = request.args.get("t", type=int)
+        if start is None:
+            start = request.form.get("t", type=int) or 0
+        lines = corrections.window(conn, video_id, around=start)
+    finally:
+        conn.close()
+    return render_template(
+        "fix.html", video={"id": meta[0], "title": meta[1]},
+        youtube_id=search.youtube_id(meta[2]), lines=lines, start=int(start or 0),
+        saved=saved, hhmmss=_hhmmss, no_store=True)
 
 
 @app.route("/video/<int:video_id>/export.docx")

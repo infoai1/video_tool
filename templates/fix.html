@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Fix the transcript — {{ video.title or 'Lecture' }}{% endblock %}
+{% block head %}<meta name="robots" content="noindex, nofollow">{% endblock %}
+{% block content %}
+<style>
+  .fx-head{max-width:760px;margin:4px 0 14px}
+  .fx-kick{font-size:12px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
+  .fx-kick a{color:var(--muted);text-decoration:none}
+  .fx-h1{font-size:20px;font-weight:700;letter-spacing:-.02em;margin:4px 0 8px;line-height:1.3}
+  .fx-sub{font-size:14.5px;line-height:1.6;color:var(--muted);margin:0 0 6px;max-width:64ch}
+  .fx-ok{margin:0 0 14px;padding:10px 14px;border-radius:10px;background:var(--accent-soft,rgba(0,128,96,.12));
+    color:var(--accent);font-size:14px;font-weight:600;max-width:64ch}
+  .fx-player{position:relative;width:100%;max-width:760px;aspect-ratio:16/9;margin:0 0 14px;
+    border-radius:14px;overflow:hidden;background:#000}
+  .fx-player iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+  .fx-jump{display:flex;gap:8px;align-items:center;margin:0 0 16px;font-size:14px;flex-wrap:wrap}
+  .fx-jump input{font:inherit;padding:7px 10px;border:1px solid var(--line);border-radius:8px;
+    background:var(--surface);color:var(--ink);width:7em}
+  .fx-line{display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--line)}
+  .fx-t{flex:0 0 auto;min-width:54px;padding-top:9px;font-size:12.5px;font-weight:600;
+    color:var(--accent);font-variant-numeric:tabular-nums;text-decoration:none}
+  .fx-t:hover{text-decoration:underline}
+  .fx-f{flex:1 1 auto;min-width:0}
+  .fx-f textarea{width:100%;font:inherit;font-size:15.5px;line-height:1.6;padding:8px 10px;
+    border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);
+    resize:vertical;min-height:2.9em}
+  .fx-f textarea:focus{border-color:var(--accent);outline:none}
+  .fx-ur{font-size:15px;line-height:1.9;color:var(--muted);margin:5px 4px 0;direction:rtl;text-align:right}
+  .fx-done{font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+    color:var(--accent);margin:4px 0 0}
+  .fx-bar{position:sticky;bottom:0;background:var(--bg);padding:14px 0 18px;margin-top:8px;
+    border-top:1px solid var(--line);display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+  .fx-bar button{font:inherit;font-size:15px;font-weight:600;padding:11px 22px;border:0;border-radius:10px;
+    background:var(--accent);color:#fff;cursor:pointer}
+  .fx-note{font-size:13px;color:var(--muted)}
+  @media(max-width:560px){.fx-line{gap:8px}.fx-t{min-width:46px}}
+</style>
+<div class="fx-head">
+  <div class="fx-kick"><a href="/video/{{ video.id }}">← Back to the transcript</a></div>
+  <h1 class="fx-h1">{{ video.title or 'Lecture' }}</h1>
+  <p class="fx-sub">Play from the moment, listen, and correct what the machine misheard.
+    Only the lines you change are saved — and each change is kept, so a correction can
+    itself be undone. Search and the page both follow immediately.</p>
+</div>
+
+{% if saved %}<p class="fx-ok">{{ saved }} line{{ '' if saved == 1 else 's' }} corrected.</p>{% endif %}
+
+{% if youtube_id %}
+<div class="fx-player">
+  <iframe loading="lazy" allowfullscreen allow="accelerometer; encrypted-media; picture-in-picture"
+          src="https://www.youtube.com/embed/{{ youtube_id }}?start={{ start }}&rel=0"></iframe>
+</div>
+{% endif %}
+
+<form method="get" class="fx-jump">
+  <label for="t">Go to</label>
+  <input id="t" name="t" value="{{ start }}" inputmode="numeric">
+  <span class="fx-note">seconds ({{ hhmmss(start) }})</span>
+  <button type="submit" style="font:inherit;padding:7px 14px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);cursor:pointer">Jump</button>
+</form>
+
+<form method="post">
+  <input type="hidden" name="t" value="{{ start }}">
+  {% for l in lines %}
+  <div class="fx-line">
+    <a class="fx-t" href="https://www.youtube.com/watch?v={{ youtube_id }}&t={{ l.t|int }}s"
+       target="_blank" rel="noopener">{{ hhmmss(l.t|int) }}</a>
+    <div class="fx-f">
+      <textarea name="s{{ l.id }}" rows="2">{{ l.text }}</textarea>
+      {% if l.urdu %}<div class="fx-ur">{{ l.urdu }}</div>{% endif %}
+      {% if l.corrected %}<div class="fx-done">corrected</div>{% endif %}
+    </div>
+  </div>
+  {% endfor %}
+  <div class="fx-bar">
+    <button type="submit">Save corrections</button>
+    <span class="fx-note">{{ lines|length }} lines shown · {{ hhmmss(start) }} onward</span>
+  </div>
+</form>
+{% endblock %}

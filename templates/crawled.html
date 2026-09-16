@@ -56,6 +56,7 @@
       <div class="cr-who">{{ r.who }}</div>
       <div class="cr-acts">
         <a href="{{ r.path }}{% if r.start %}#t={{ r.start }}{% endif %}">Read the transcript</a>
+        {% if r.fix %}<a href="{{ r.fix }}">Play it and fix the words</a>{% endif %}
         <span class="cr-when">last read {{ r.last }}</span>
       </div>
     </div>
