@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}What the crawlers read — Maulana Wahiduddin Khan{% endblock %}
+{% block head %}<meta name="robots" content="noindex, nofollow">{% endblock %}
+{% block content %}
+<style>
+  .cr-head{max-width:760px;margin:6px 0 18px}
+  .cr-h1{font-size:22px;font-weight:700;letter-spacing:-.02em;margin:0 0 8px}
+  .cr-sub{font-size:15px;line-height:1.6;color:var(--muted);margin:0 0 12px;max-width:66ch}
+  .cr-tot{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 6px}
+  .cr-pill{font-size:13px;font-weight:600;border:1px solid var(--line);border-radius:999px;
+    padding:5px 12px;background:var(--surface)}
+  .cr-when{font-size:12.5px;color:var(--muted)}
+  .cr-list{display:grid;gap:10px;margin:18px 0 0;max-width:900px}
+  .cr-row{display:flex;gap:14px;align-items:flex-start;padding:12px 14px;border:1px solid var(--line);
+    border-radius:12px;background:var(--surface)}
+  .cr-n{flex:0 0 auto;font-size:19px;font-weight:700;min-width:2.2em;text-align:right;
+    font-variant-numeric:tabular-nums;color:var(--accent)}
+  .cr-n span{display:block;font-size:10.5px;font-weight:700;letter-spacing:.05em;
+    text-transform:uppercase;color:var(--muted)}
+  .cr-body{flex:1 1 auto;min-width:0}
+  .cr-kind{font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+    color:var(--muted);margin-bottom:2px}
+  .cr-t{font-size:16px;font-weight:600;line-height:1.35;margin:0 0 4px;overflow-wrap:anywhere}
+  .cr-t a{color:var(--ink);text-decoration:none}
+  .cr-t a:hover{color:var(--accent)}
+  .cr-who{font-size:13px;color:var(--muted)}
+  .cr-acts{margin-top:6px;display:flex;flex-wrap:wrap;gap:12px;font-size:13px}
+  .cr-acts a{color:var(--accent);font-weight:600;text-decoration:none}
+  .cr-acts a:hover{text-decoration:underline}
+  .cr-empty{color:var(--muted);font-size:15px;line-height:1.6;max-width:62ch}
+  @media(max-width:560px){.cr-row{padding:11px 12px;gap:10px}.cr-t{font-size:15px}}
+</style>
+<div class="cr-head">
+  <h1 class="cr-h1">What the crawlers have read</h1>
+  <p class="cr-sub">The transcripts are machine-made, so some lines carry the wrong word.
+    These are the pages search engines and AI assistants have actually fetched — the ones
+    whose words are being quoted now, and so the ones worth correcting first. Open one,
+    play it from the second it starts, and read along.</p>
+  {% if data.visits %}
+  <div class="cr-tot">
+    {% for bot, n in data.totals.items() %}<span class="cr-pill">{{ bot }} · {{ n }}</span>{% endfor %}
+  </div>
+  <p class="cr-when">{{ data.visits }} visits to {{ data.lectures }} lectures and
+    {{ data.answers }} answers · log covers {{ data.first }} to {{ data.last }}</p>
+  {% endif %}
+</div>
+
+{% if data.rows %}
+<div class="cr-list">
+  {% for r in data.rows %}
+  <div class="cr-row">
+    <div class="cr-n">{{ r.n }}<span>reads</span></div>
+    <div class="cr-body">
+      <div class="cr-kind">{{ r.kind }}</div>
+      <p class="cr-t"><a href="{{ r.path }}{% if r.start %}#t={{ r.start }}{% endif %}">{{ r.title }}</a></p>
+      <div class="cr-who">{{ r.who }}</div>
+      <div class="cr-acts">
+        <a href="{{ r.path }}{% if r.start %}#t={{ r.start }}{% endif %}">Read the transcript</a>
+        <span class="cr-when">last read {{ r.last }}</span>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<p class="cr-empty">No crawler has fetched a transcript page in the log we can see yet.
+  Google was sent the sitemap on 15 September and works through a new site over days, not
+  minutes — this page fills up as it goes. Come back tomorrow.</p>
+{% endif %}
+{% endblock %}

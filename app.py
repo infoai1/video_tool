@@ -17,6 +17,7 @@ import re as _re
 _re_mwk = _re.compile(r"\s*(by\s+)?Maulana\s+Wahiduddin\s+Khan\s*", _re.I)
 
 import config
+import crawled
 import db
 import export
 import jobs
@@ -99,6 +100,7 @@ _OPERATOR_ENDPOINTS = {
     "api_romanize_video", "api_romanize_all", "api_job", "api_jobs",
     "api_romanize",  # owner 2026-09-05: the LLM filler is not for visitors
     "api_save_video", "api_save_segment", "api_bookmark_delete", "api_bookmark_tag",
+    "crawled_page",  # the crawl log is the owner's working list, not a public page
 }
 
 
@@ -286,6 +288,13 @@ if INDEXNOW_KEY:
     @app.route(f"/{INDEXNOW_KEY}.txt")
     def _indexnow():
         return INDEXNOW_KEY, 200, {"Content-Type": "text/plain; charset=utf-8"}
+
+
+@app.route("/crawled")
+def crawled_page():
+    """Which transcripts the crawlers have read -- the correction queue."""
+    data = crawled.rows(config.DB_PATH, llms.QA_DB)
+    return render_template("crawled.html", data=data, no_store=True)
 
 
 @app.route("/llms.txt")
