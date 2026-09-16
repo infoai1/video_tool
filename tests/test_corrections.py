@@ -4,6 +4,7 @@ import sqlite3
 import pytest
 
 import corrections
+import normalize
 
 
 @pytest.fixture()
@@ -301,3 +302,24 @@ def test_word_matches_fixable_excludes_hand_corrected_lines(conn):
     assert any(r["segment_id"] == 2 and r["human"] for r in rows)   # engine still flags it
     fixable, _variants, _total = corrections.word_matches_fixable(conn, ["line"])
     assert all(r["segment_id"] != 2 for r in fixable)   # the page never offers it
+
+
+def test_other_spellings_are_offered_not_applied(conn):
+    """The machine lists look-alikes; only the ones passed in are rewritten.
+
+    dua/due and namaz/namazi share consonants but are different words, so
+    spellings_like may offer them -- apply_word must touch only what it is given.
+    """
+    for sid, txt in ((10, "namaz padhna"), (11, "Namaaz ka waqt"), (12, "namazi log")):
+        nrm = normalize.normalize(txt)
+        conn.execute("INSERT INTO segments (id, video_id, start_time, roman_text, roman_norm, urdu_text)"
+                     " VALUES (?, 7, ?, ?, ?, '')", (sid, sid, txt, nrm))
+        conn.execute("INSERT INTO segments_fts (rowid, roman_norm) VALUES (?, ?)", (sid, nrm))
+    offered = dict(corrections.spellings_like(conn, "namaz"))
+    assert "namazi" in offered                       # offered, because consonants match
+
+    corrections.apply_word(conn, ["namaz", "namaaz"], who="owner")
+    shown = lambda i: conn.execute(
+        "SELECT COALESCE(NULLIF(TRIM(roman_clean),''), roman_text) FROM segments WHERE id=?", (i,)).fetchone()[0]
+    assert shown(11) == "Namaz ka waqt"              # chosen spelling fixed, capital kept
+    assert shown(12) == "namazi log"                 # never chosen, never touched

@@ -697,6 +697,11 @@ def fix_words_page():
     conn = db.connect()
     try:
         w = _fix_words_word(request.values.get("w"))
+        # Other spellings the owner has ticked. The typed word is always the one
+        # every match is rewritten TO; these are the ones to also look for.
+        also = [x for x in (_fix_words_word(t) for t in
+                            _re.split(r"[\s,]+", request.values.get("also") or "")) if x][:8]
+        words = ([w] + [x for x in also if x != w]) if w else []
         result = None
         batch = request.values.get("batch") or None
         if request.method == "POST" and w:
@@ -715,13 +720,18 @@ def fix_words_page():
                     # apply_word needs it alongside the correct spelling so it still finds
                     # the very lines this page is showing, not just already-correct ones.
                     result = corrections.apply_word(
-                        conn, [correct, w], ids=ids, who=session.get("user") or "owner")
+                        conn, [correct] + [x for x in words if x != correct],
+                        ids=ids, who=session.get("user") or "owner")
                     if "error" not in result:
                         conn.commit()
                         batch = result.get("batch")
                         w = correct  # re-render under the spelling the owner just chose
         rows, variants, total = (
-            corrections.word_matches_fixable(conn, [w], limit=_FIX_WORDS_LIMIT) if w else ([], set(), 0))
+            corrections.word_matches_fixable(conn, words, limit=_FIX_WORDS_LIMIT) if w else ([], set(), 0))
+        # Offered, not applied: the machine cannot tell namaz from namazi, or dua
+        # from due, so it only lists them and the owner taps the real ones.
+        offered = [(t, n) for t, n in corrections.spellings_like(conn, w)
+                   if t not in also] if w else []
         # With nothing typed, the page opens on what the crawlers have been
         # reading -- that is where a wrong word is being quoted today, and it
         # saves the owner having to think of a word before they can start.
@@ -741,7 +751,7 @@ def fix_words_page():
         conn.close()
     return render_template(
         "fix_words.html", w=w, rows=rows, variants=sorted(variants), total=total,
-        read_by_bots=read_by_bots, crawl=crawl,
+        read_by_bots=read_by_bots, crawl=crawl, offered=offered, also=also,
         result=result, batch=batch, highlight=_highlight_variants, hhmmss=_hhmmss, no_store=True)
 
 

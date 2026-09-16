@@ -16,6 +16,7 @@ said before -- a correction can be wrong too, and nothing here is destructive.
 """
 import datetime
 import re
+import sqlite3
 import uuid
 
 import normalize
@@ -254,3 +255,38 @@ def word_matches_fixable(conn, words, limit=300):
     lines (flagged "human") to whoever calls word_matches() directly."""
     rows, variants, total = word_matches(conn, words, limit=limit)
     return [r for r in rows if not r["human"]], variants, total
+
+# The same word, spelled other ways. Roman Urdu has no fixed spelling, so the
+# machine wrote namaz/namaaz/namazi and khushu/khusho/khushi. Matching on the
+# consonants finds them all -- and inevitably finds different words that happen
+# to share consonants (dua/due, khushu/khushi), which is why this only ever
+# OFFERS: the owner taps the ones that are the same word.
+# ponytail: consonant matching over-offers; upgrade: rank by edit distance if
+# the list ever gets long enough to be annoying.
+_VOWELS = re.compile(r"[aeiou']")
+_DOUBLED = re.compile(r"(.)\1+")
+
+
+def _skeleton(w):
+    return _DOUBLED.sub(r"\1", _VOWELS.sub("", (w or "").lower()))
+
+
+def spellings_like(conn, word, limit=12):
+    """[(spelling, times it appears)] for other spellings of `word`, commonest first."""
+    word = (word or "").strip().lower()
+    if len(word) < 2:
+        return []
+    try:
+        conn.execute("CREATE VIRTUAL TABLE temp.vocab USING fts5vocab(main, 'segments_fts', 'row')")
+    except sqlite3.Error:
+        pass  # already created on this connection
+    want = _skeleton(word)
+    try:
+        rows = [(t, n) for t, n in conn.execute(
+            "SELECT term, cnt FROM temp.vocab WHERE term GLOB ?", (word[:2] + "*",))
+            if t != word and _skeleton(t) == want]
+    except sqlite3.Error:
+        return []
+    rows.sort(key=lambda r: -r[1])
+    return rows[:limit]
+

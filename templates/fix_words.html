@@ -11,6 +11,14 @@
   .wf-search input{font:inherit;font-size:16px;border:0;background:none;color:var(--fg);
     outline:none;width:100%}
   .wf-count{font-size:13.5px;color:var(--muted);margin:12px 16px}
+  .wf-alsobar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:12px 16px 2px}
+  .wf-alsolbl{font-size:13px;color:var(--muted);margin-right:2px}
+  .wf-pill{display:inline-flex;align-items:center;gap:5px;padding:7px 13px;border-radius:999px;
+    border:1px solid var(--line);background:var(--panel);color:var(--fg);
+    font-size:14.5px;text-decoration:none;min-height:36px}
+  .wf-pill i{font-style:normal;font-size:12.5px;color:var(--muted)}
+  .wf-pill.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+  .wf-pill.on i{color:rgba(255,255,255,.8)}
   .wf-sum{margin:14px 16px 2px;font-size:15px;line-height:1.55;color:var(--muted)}
   .wf-sum b{color:var(--fg);font-weight:600}
   .wf-terms{display:inline-block;margin-top:4px;font-size:14px}
@@ -70,6 +78,19 @@
 </div>
 
 {% if w %}
+  {% if offered or also %}
+  {# The machine offers other spellings; only the owner knows which are the same
+     word (namaz/namazi, dua/due are not). Tap to include, tap again to drop. #}
+  <div class="wf-alsobar">
+    <span class="wf-alsolbl">Also spelled</span>
+    {% for t in also %}
+      <a class="wf-pill on" href="{{ url_for('fix_words_page', w=w, also=(also|reject('equalto', t)|join(','))) }}">{{ t }} &times;</a>
+    {% endfor %}
+    {% for t, n in offered %}
+      <a class="wf-pill" href="{{ url_for('fix_words_page', w=w, also=((also + [t])|join(','))) }}">{{ t }} <i>{{ n }}</i></a>
+    {% endfor %}
+  </div>
+  {% endif %}
   {% if rows %}
   <p class="wf-count"><b>{{ total }}</b> line{{ '' if total == 1 else 's' }} say this &middot; tap one to hear it</p>
   <ul class="wf-list" id="wf-list">
