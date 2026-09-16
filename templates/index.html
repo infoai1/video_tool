@@ -32,8 +32,9 @@
           i=(i+1)%words.length;el.textContent=words[i];
           el.classList.remove('is-out');
           el.classList.remove('is-in');void el.offsetWidth;el.classList.add('is-in');
+          if(words[i]==='Why'&&!reduce){el.classList.remove('sheen');void el.offsetWidth;el.classList.add('sheen');}
           setTimeout(next,words[i]==='Why'?3600:2600);
-        },reduce?320:460);
+        },reduce?320:480);
       }
       setTimeout(next,2600);
     })();
