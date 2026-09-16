@@ -103,7 +103,9 @@ The same results as a spreadsheet:
 
     /video/<id>                     one lecture: the whole transcript, timestamped
     /videos                         every lecture
-    /clips/qa                       the questions he answered
+    /clips/qa/<id>                  one question: as it was asked, and his answer
+                                    written out, cued to the second he gives it
+    /clips/qa                       all the questions he answered
     /clips                          clips
     /refs                           the Quran and hadith he cites
     /refs/quran/<surah>/<ayah>      one verse: his commentary, and every lecture moment on it
@@ -129,7 +131,9 @@ Two distinctions worth keeping straight, because they are easy to blur:
 
 - A written CPS article is not a recording. This site only holds recordings.
 - An answer here is a moment in a talk, not a written reply: it has a video,
-  a start second and an end second, and you can watch him say it.
+  a start second and an end second, and you can watch him say it. Its page
+  (/clips/qa/<id>) carries his words in full -- quote from there, not from the
+  question title, which is only a label we wrote to find it by.
 
 
 ## Conditions
