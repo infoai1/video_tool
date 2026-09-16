@@ -16,6 +16,7 @@ numbers, not the site.
 import os
 import re
 import sqlite3
+from urllib.parse import unquote_plus
 from collections import OrderedDict
 
 LOGS = ("/var/log/nginx/access.log", "/var/log/nginx/access.log.1")
@@ -39,10 +40,18 @@ BOTS = (
 _BOTS = [(name, re.compile(pat, re.I), tuple(re.compile(p) for p in ips)) for name, pat, ips in BOTS]
 
 # Only the pages that carry his words: a lecture transcript, or one answer.
+# Requests from this machine -- our own checks and test fetches -- carry whatever
+# user-agent we gave them. They are not crawlers and must never be counted as one.
+OURS = ("37.27.33.213", "127.0.0.1", "::1")
+
 _LINE = re.compile(
     r'^(?P<ip>\S+) \S+ \S+ \[(?P<when>[^\]]+)\] "(?:GET|HEAD) '
     r'(?P<path>/(?:video/\d+|clips/qa/\d+))(?:[?#]\S*)? [^"]*" (?P<status>\d{3}) '
     r'\S+ "[^"]*" "(?P<ua>[^"]*)"')
+
+_SEARCH = re.compile(
+    r'^(?P<ip>\S+) \S+ \S+ \[[^\]]+\] "GET /search\?[^ "]*?q=(?P<q>[^ &"]*)'
+    r'[^"]*" \d{3} \S+ "[^"]*" "(?P<ua>[^"]*)"')
 
 
 def _tail(path, max_bytes=MAX_BYTES):
@@ -106,12 +115,20 @@ def _titles(paths, roman_db, qa_db):
 def rows(roman_db, qa_db):
     """One row per page a crawler read, most-read first."""
     hits = {}
+    searched = OrderedDict()
     totals = OrderedDict((name, 0) for name, _, _ in BOTS)
     first_seen = last_seen = ""
     for path in LOGS:
         for line in _tail(path):
+            q = _SEARCH.match(line)
+            if q and q.group("ip") not in OURS and _bot(q.group("ua"), q.group("ip")):
+                term = unquote_plus(q.group("q")).strip()
+                if term:
+                    searched[term] = searched.get(term, 0) + 1
             m = _LINE.match(line)
             if not m:
+                continue
+            if m.group("ip") in OURS:
                 continue
             got = _bot(m.group("ua"), m.group("ip"))
             if not got:
@@ -139,7 +156,8 @@ def rows(roman_db, qa_db):
                     "who": ", ".join(f"{b} ×{n}" for b, n in
                                      sorted(h["bots"].items(), key=lambda kv: -kv[1]))})
     out.sort(key=lambda r: (-r["n"], r["title"]))
-    result = {"rows": out, "totals": {k: v for k, v in totals.items() if v},
+    result = {"rows": out, "searched": list(searched.items()),
+              "totals": {k: v for k, v in totals.items() if v},
               "first": first_seen, "last": last_seen,
               "lectures": sum(1 for r in out if r["kind"] == "Lecture"),
               "answers": sum(1 for r in out if r["kind"] == "Answer"),

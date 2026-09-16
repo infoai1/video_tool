@@ -725,7 +725,8 @@ def fix_words_page():
         # With nothing typed, the page opens on what the crawlers have been
         # reading -- that is where a wrong word is being quoted today, and it
         # saves the owner having to think of a word before they can start.
-        read_by_bots = [] if w else crawled.rows(config.DB_PATH, llms.QA_DB)["rows"][:40]
+        crawl = None if w else crawled.rows(config.DB_PATH, llms.QA_DB)
+        read_by_bots = [] if w else crawl["rows"][:40]
         # total from word_matches_fixable counts human-corrected lines too (it comes
         # from the underlying word_matches before that filter); the count line means
         # "lines you can act on", so use what's actually shown.
@@ -740,7 +741,7 @@ def fix_words_page():
         conn.close()
     return render_template(
         "fix_words.html", w=w, rows=rows, variants=sorted(variants), total=total,
-        read_by_bots=read_by_bots,
+        read_by_bots=read_by_bots, crawl=crawl,
         result=result, batch=batch, highlight=_highlight_variants, hhmmss=_hhmmss, no_store=True)
 
 

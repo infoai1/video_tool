@@ -11,6 +11,9 @@
   .wf-search input{font:inherit;font-size:16px;border:0;background:none;color:var(--fg);
     outline:none;width:100%}
   .wf-count{font-size:13.5px;color:var(--muted);margin:12px 16px}
+  .wf-sum{margin:14px 16px 2px;font-size:15px;line-height:1.55;color:var(--muted)}
+  .wf-sum b{color:var(--fg);font-weight:600}
+  .wf-terms{display:inline-block;margin-top:4px;font-size:14px}
   .wf-list{list-style:none;margin:0;padding:0 0 90px}
   .wf-row{display:flex;width:100%;text-align:left;gap:12px;align-items:flex-start;
     padding:12px 16px;border:0;border-bottom:1px solid var(--line);background:none;
@@ -88,7 +91,17 @@
   {% endif %}
 {% elif read_by_bots %}
   {# Nothing typed: open on what the crawlers read, so checking starts with a tap. #}
-  <p class="wf-count">Read by search engines and AI since yesterday &middot; tap one to check it</p>
+  {# The daily glance: who came, how much they read, and anything they typed. #}
+  <p class="wf-sum">
+    <b>{{ crawl.visits }}</b> reads by
+    <b>{{ crawl.totals.keys()|join(', ') }}</b>
+    across <b>{{ crawl.lectures }}</b> lecture{{ '' if crawl.lectures == 1 else 's' }}
+    and <b>{{ crawl.answers }}</b> answer{{ '' if crawl.answers == 1 else 's' }}
+    {%- if crawl.searched %}<br><span class="wf-terms">They searched:
+      {% for t, n in crawl.searched %}&ldquo;{{ t }}&rdquo;{% if n > 1 %} &times;{{ n }}{% endif %}{{ ", " if not loop.last }}{% endfor %}
+    </span>{% endif %}
+  </p>
+  <p class="wf-count">Tap one to check it</p>
   <ul class="wf-list">
     {% for b in read_by_bots %}
     <li>
