@@ -18,24 +18,16 @@
     (function(){
       var roll=document.querySelector('.c3-big .c3-rot');if(!roll)return;
       var words=['What','Why'],i=0;
-      var cs=getComputedStyle(roll),font=cs.fontWeight+' '+cs.fontSize+' '+cs.fontFamily;
-      var probe=document.createElement('span');
-      probe.style.cssText='position:absolute;visibility:hidden;white-space:pre;text-transform:'+cs.textTransform+';font:'+font+';letter-spacing:'+cs.letterSpacing;
-      document.body.appendChild(probe);
-      var W={};words.forEach(function(x){probe.textContent=x;W[x]=Math.ceil(probe.offsetWidth);});
-      document.body.removeChild(probe);
-      roll.style.width=W[words[0]]+'px';
       var reduce=window.matchMedia&&matchMedia('(prefers-reduced-motion:reduce)').matches;
       function render(word){roll.innerHTML='';for(var k=0;k<word.length;k++){var c=document.createElement('span');c.className='col';var l=document.createElement('span');l.className='ltr';l.textContent=word[k];c.appendChild(l);roll.appendChild(c);}}
-      function fit(word){if(W[word])roll.style.width=W[word]+'px';}
-      render(words[0]);fit(words[0]);
+      render(words[0]);
       function swap(){
         var word=words[(i+1)%words.length];
-        if(reduce){i=(i+1)%words.length;roll.style.opacity='0';setTimeout(function(){render(word);fit(word);roll.style.opacity='1';setTimeout(swap,word==='Why'?3600:2600);},320);return;}
+        if(reduce){i=(i+1)%words.length;roll.style.opacity='0';setTimeout(function(){render(word);roll.style.opacity='1';setTimeout(swap,word==='Why'?3600:2600);},320);return;}
         roll.querySelectorAll('.ltr').forEach(function(l,k){setTimeout(function(){l.classList.add('run','up');},k*45);});
         var outLen=words[i].length;
         setTimeout(function(){
-          i=(i+1)%words.length;render(word);fit(word);
+          i=(i+1)%words.length;render(word);
           roll.querySelectorAll('.ltr').forEach(function(l,k){l.classList.add('enter');
             setTimeout(function(){l.classList.add('run');void l.offsetWidth;l.classList.remove('enter');},k*58+20);});
           setTimeout(swap,word==='Why'?3600:2600);
