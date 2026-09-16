@@ -16,6 +16,14 @@ import re
 
 SPEAKER = "Maulana Wahiduddin Khan"
 
+# Said in the markup and shown on the page, in the same words. The transcripts
+# are machine-made from the recordings; a line that reads oddly is a machine's
+# mistake, never a change to what he said, and the recording is one tap away at
+# the second it was spoken. An engine quoting us should carry that with it.
+PROVENANCE = ("Machine transcription of the speaker's recorded words, aligned to the "
+              "recording second by second. Every line links to that second in the video, "
+              "so any quotation can be checked against him saying it.")
+
 # The JSON-LD copy of the transcript goes to every visitor, not just crawlers,
 # so it is capped. The longest lectures run past 150k characters; past this the
 # extra text buys nothing -- the whole transcript is still in the HTML below --
@@ -205,6 +213,11 @@ def video_meta(video, youtube_id, clips, qa, base_url, published_at=None):
         # The property that makes the spoken words searchable as the video's own
         # words rather than as loose text that happens to sit near a player.
         node["transcript"] = transcript
+        # ... and the caveat that travels with it wherever it is quoted.
+        node["creditText"] = PROVENANCE
+        if youtube_id:
+            node["isBasedOn"] = {"@type": "VideoObject",
+                                 "url": f"https://www.youtube.com/watch?v={youtube_id}"}
     total_secs = 0
     for s in segments:
         if s.get("start_time"):

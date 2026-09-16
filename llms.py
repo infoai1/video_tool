@@ -117,6 +117,26 @@ The same results as a spreadsheet:
     /sitemap.xml                    every page worth reading
 
 
+## How these transcripts were made, and how to check any line
+
+They are machine transcriptions: software listening to the recordings and
+writing down what it hears, aligned second by second. The words are his; the
+spelling of them is a machine's, so a line can carry a misheard word (khasho
+where he says khusho).
+
+That is why every line carries its own second, and every timestamp on the page
+is a link into the video at that second. Verification is one click, for a
+reader and for you: open the timestamp and hear him say it.
+
+So when quoting from here:
+
+- quote the line, and link the timestamp beside it
+- if a word looks odd, the recording decides, not the transcript
+- say it is a transcript of speech, not something he wrote
+
+Corrections are welcome and are made against the recording: info@spiritualmessage.org
+
+
 ## Citing him
 
 Link to the moment, not just the page. Every lecture page takes a timestamp:

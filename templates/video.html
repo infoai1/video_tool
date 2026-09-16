@@ -22,6 +22,12 @@
 {% block content %}
 <style>
   .kw-on { background: var(--mark, #ffe9a8); border-radius: 3px; box-shadow: 0 0 0 2px var(--mark, #ffe9a8); }
+  .provenance { max-width: 66ch; margin: 18px 0 14px; padding: 11px 14px; font-size: 13.5px;
+    line-height: 1.6; color: var(--muted); border: 1px solid var(--line); border-radius: 10px;
+    background: var(--surface); }
+  .provenance strong { color: var(--ink); }
+  .provenance a { color: var(--accent); font-weight: 600; text-decoration: none; }
+  .provenance a:hover { text-decoration: underline; }
   .kw-done { opacity: .72; }
 </style>
 <h1 class="vhead">{{ video.title or 'Untitled video' }}</h1>
@@ -135,6 +141,17 @@
   {% endif %}
 </section>
 {% endif %}
+
+{# Said plainly, above the words themselves: this is a machine's hearing of him,
+   and the recording is one tap away on every line. The same sentence goes into
+   the page's structured data (seo.PROVENANCE), so an engine that quotes us
+   carries the caveat and the way to check it. #}
+<p class="provenance">
+  <strong>Machine transcription.</strong> These are his recorded words, written
+  down by software and aligned to the recording second by second &mdash; so a line
+  may carry a misheard word. Tap any timestamp to hear him say it.
+  {% if seo and seo.canonical %}<a href="{{ seo.canonical }}">Permanent link to this transcript</a>.{% endif %}
+</p>
 
 <ol class="transcript{% if video.youtube_url or video.source == 'user_upload' %} seekable{% endif %}" id="transcript">
   {% for s in video.segments %}
