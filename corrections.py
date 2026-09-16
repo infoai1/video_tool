@@ -16,6 +16,7 @@ said before -- a correction can be wrong too, and nothing here is destructive.
 """
 import datetime
 import re
+import uuid
 
 import normalize
 
@@ -42,6 +43,13 @@ CREATE TABLE IF NOT EXISTS word_fixes (
 
 def ensure_schema(conn):
     conn.executescript(SCHEMA)
+    # batch groups the lines one apply_word() call touched, so undo_batch() can
+    # revert all of them together. Added after the original table shipped, so
+    # guard with a PRAGMA check -- runs once, safe on a database that already
+    # has the column.
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(corrections)")}
+    if "batch" not in cols:
+        conn.execute("ALTER TABLE corrections ADD COLUMN batch TEXT")
 
 
 def current(conn, seg_id):
@@ -52,7 +60,7 @@ def current(conn, seg_id):
     return (row[0], row[1] or "") if row else None
 
 
-def apply(conn, seg_id, text, who="owner"):
+def apply(conn, seg_id, text, who="owner", batch=None):
     """Correct one line. Returns True when something changed.
 
     `conn` must be writable. The caller commits -- several lines corrected
@@ -74,9 +82,9 @@ def apply(conn, seg_id, text, who="owner"):
     conn.execute("DELETE FROM segments_fts WHERE rowid = ?", (seg_id,))
     conn.execute("INSERT INTO segments_fts (rowid, roman_norm) VALUES (?, ?)", (seg_id, norm))
     conn.execute(
-        "INSERT INTO corrections (segment_id, video_id, was, now, who, at) VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO corrections (segment_id, video_id, was, now, who, at, batch) VALUES (?, ?, ?, ?, ?, ?, ?)",
         (seg_id, video_id, was, text, who,
-         datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")))
+         datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"), batch))
     return True
 
 
@@ -113,17 +121,6 @@ def last(conn, seg_id):
 
 
 _WORD_RE = re.compile(r"[A-Za-z']+")
-_SKEL_RUN = re.compile(r"(.)\1+")
-_SKEL_DROP = re.compile(r"[aeiou']")
-
-
-def _skeleton(word):
-    """Consonant skeleton for spellings_like(): lowercase, drop vowels/apostrophes,
-    collapse repeated letters. Two spellings of the same word usually collapse to
-    the same skeleton (khushu/khusho -> khsh); unrelated words sometimes do too
-    (khushi = happiness also -> khsh), which is why spellings_like() is a
-    suggestion, never an automatic match."""
-    return _SKEL_RUN.sub(r"\1", _SKEL_DROP.sub("", word.lower()))
 
 
 def _human_touched(conn, seg_id):
@@ -174,41 +171,6 @@ def word_matches(conn, words, limit=500):
     return rows[:limit], variants, len(rows)
 
 
-def spellings_like(conn, word, limit=12):
-    """Other spellings the library actually uses for `word`, as a suggestion.
-
-    Reads the FTS5 vocabulary of segments_fts directly -- no new table on
-    disk, just a temp view over the existing index -- and keeps terms whose
-    consonant skeleton matches `word`'s. This is a SUGGESTION only: a false
-    friend with the same skeleton (khushi = happiness, same skeleton as
-    khushu) will appear; the owner decides what to add to the box, nothing
-    here adds it for them. Returns [(term, cnt), ...] sorted by count desc.
-
-    ponytail: skeleton matching over-suggests; upgrade: rank by edit distance
-    if the list gets noisy.
-    """
-    ensure_schema(conn)
-    key = normalize.normalize(word)
-    if not key or " " in key or len(key) < 2:
-        return []
-    try:
-        conn.execute(
-            "CREATE VIRTUAL TABLE temp.vocab USING fts5vocab(main, 'segments_fts', 'row')")
-    except Exception as e:  # noqa: BLE001 - "already exists" is fine, a missing fts5vocab isn't
-        if "already exists" not in str(e).lower():
-            return []
-    skel = _skeleton(key)
-    prefix = key[:2] + "*"
-    out = []
-    for term, cnt in conn.execute(
-            "SELECT term, cnt FROM temp.vocab WHERE term GLOB ?", (prefix,)):
-        if term == key or _skeleton(term) != skel:
-            continue
-        out.append((term, cnt))
-    out.sort(key=lambda t: -t[1])
-    return out[:limit]
-
-
 def apply_word(conn, words, ids=None, who="owner"):
     """Replace every matched variant spelling with `words[0]`, the owner's chosen spelling.
 
@@ -218,7 +180,8 @@ def apply_word(conn, words, ids=None, who="owner"):
     (the owner's ticked subset) -- always intersected with a fresh
     word_matches() lookup, never the client's say-so alone. Human-corrected
     lines are always skipped. One word_fixes row per variant actually
-    replaced.
+    replaced. All lines changed by this one call share a fresh batch id
+    (returned as "batch"), so undo_batch() can revert the whole group.
     """
     words = [w.strip() for w in (words or []) if w and w.strip()]
     if not words or any(" " in w or "\t" in w for w in words):
@@ -247,8 +210,9 @@ def apply_word(conn, words, ids=None, who="owner"):
         lecture_ids.add(r["video_id"])
         used_variants.update(v.lower() for v in r["matched"] if v.lower() != word.lower())
 
+    batch = uuid.uuid4().hex[:12] if changed else None
     for seg_id, new_text in changed:
-        apply(conn, seg_id, new_text, who=f"glossary:{word}")
+        apply(conn, seg_id, new_text, who=f"glossary:{word}", batch=batch)
     if used_variants:
         at = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
         for variant in used_variants:
@@ -256,7 +220,7 @@ def apply_word(conn, words, ids=None, who="owner"):
                 "INSERT INTO word_fixes (wrong, right, who, at) VALUES (?, ?, ?, ?) "
                 "ON CONFLICT(wrong) DO UPDATE SET right=excluded.right, who=excluded.who, at=excluded.at",
                 (variant, word, who, at))
-    return {"lines": len(changed), "lectures": len(lecture_ids), "skipped_human": skipped}
+    return {"lines": len(changed), "lectures": len(lecture_ids), "skipped_human": skipped, "batch": batch}
 
 
 def word_fixes(conn):
@@ -264,3 +228,29 @@ def word_fixes(conn):
     ensure_schema(conn)
     return [{"wrong": r[0], "right": r[1], "who": r[2], "at": r[3]}
             for r in conn.execute("SELECT wrong, right, who, at FROM word_fixes ORDER BY at DESC")]
+
+
+def undo_batch(conn, batch):
+    """Revert every line one apply_word() call changed, newest line first.
+
+    A no-op for a falsy or unknown batch (old rows have batch NULL and are
+    simply not undoable as a group -- their per-line history is untouched).
+    """
+    if not batch:
+        return 0
+    ensure_schema(conn)
+    rows = conn.execute(
+        "SELECT segment_id, was FROM corrections WHERE batch = ? ORDER BY id DESC", (batch,)).fetchall()
+    n = 0
+    for seg_id, was in rows:
+        if apply(conn, seg_id, was, who="revert"):
+            n += 1
+    return n
+
+
+def word_matches_fixable(conn, words, limit=300):
+    """word_matches(), minus lines already fixed by hand -- what the fix-words
+    page is allowed to offer for a bulk fix. The engine still returns those
+    lines (flagged "human") to whoever calls word_matches() directly."""
+    rows, variants, total = word_matches(conn, words, limit=limit)
+    return [r for r in rows if not r["human"]], variants, total

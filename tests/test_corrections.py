@@ -238,22 +238,66 @@ def test_apostrophe_does_not_leak_into_the_variant(conn):
     assert r["lines"] == 0
 
 
-# --- spellings_like: suggested spellings from the live FTS vocabulary ----------
+# --- batch / undo_batch: reverting one bulk fix as a group ---------------------
 
-def test_spellings_like_suggests_by_skeleton_not_meaning(conn):
+def test_apply_word_records_a_shared_batch_on_every_changed_line(conn):
     conn.execute("INSERT INTO segments (id, video_id, start_time, roman_text, roman_norm) "
-                 "VALUES (4, 7, 3700.0, 'khusho', 'khusho'), (5, 7, 3800.0, 'khushi', 'khushi'),"
-                 " (6, 7, 3900.0, 'namaz', 'namaz')")
+                 "VALUES (4, 7, 3700.0, 'ek aur liine hai', 'ek aur line hai'),"
+                 " (6, 7, 3900.0, 'dusri liine bhi', 'dusri line bhi')")
     conn.execute("INSERT INTO segments_fts (rowid, roman_norm) VALUES"
-                 " (4, 'khusho'), (5, 'khushi'), (6, 'namaz')")
-    out = dict(corrections.spellings_like(conn, "khushu"))
-    assert "khusho" in out and "khushi" in out   # false friend, but same skeleton
-    assert "namaz" not in out
+                 " (4, 'ek aur line hai'), (6, 'dusri line bhi')")
+    r = corrections.apply_word(conn, ["line"])
+    assert r["lines"] == 2 and r["batch"]
+    batches = {row[0] for row in conn.execute(
+        "SELECT batch FROM corrections WHERE segment_id IN (4, 6)")}
+    assert batches == {r["batch"]}
 
 
-def test_spellings_like_excludes_already_typed_tokens(conn):
+def test_apply_word_with_no_changes_returns_no_batch(conn):
+    r = corrections.apply_word(conn, ["nonexistentword"])
+    assert r["lines"] == 0
+    assert r["batch"] is None
+
+
+def test_undo_batch_restores_every_line_and_leaves_others_alone(conn):
     conn.execute("INSERT INTO segments (id, video_id, start_time, roman_text, roman_norm) "
-                 "VALUES (4, 7, 3700.0, 'khusho', 'khusho')")
-    conn.execute("INSERT INTO segments_fts (rowid, roman_norm) VALUES (4, 'khusho')")
-    out = corrections.spellings_like(conn, "khusho")
-    assert all(term != "khusho" for term, _cnt in out)
+                 "VALUES (4, 7, 3700.0, 'ek aur liine hai', 'ek aur line hai'),"
+                 " (6, 7, 3900.0, 'dusri liine bhi', 'dusri line bhi')")
+    conn.execute("INSERT INTO segments_fts (rowid, roman_norm) VALUES"
+                 " (4, 'ek aur line hai'), (6, 'dusri line bhi')")
+    corrections.apply(conn, 2, "an unrelated hand fix", who="junaid")
+    r = corrections.apply_word(conn, ["line"])
+    n = corrections.undo_batch(conn, r["batch"])
+    assert n == 2
+    shown4 = conn.execute(
+        "SELECT COALESCE(NULLIF(TRIM(roman_clean),''), roman_text) FROM segments WHERE id=4"
+    ).fetchone()[0]
+    shown6 = conn.execute(
+        "SELECT COALESCE(NULLIF(TRIM(roman_clean),''), roman_text) FROM segments WHERE id=6"
+    ).fetchone()[0]
+    assert shown4 == "ek aur liine hai" and shown6 == "dusri liine bhi"
+    # the unrelated hand fix on segment 2, outside this batch, is untouched
+    shown2 = conn.execute(
+        "SELECT COALESCE(NULLIF(TRIM(roman_clean),''), roman_text) FROM segments WHERE id=2"
+    ).fetchone()[0]
+    assert shown2 == "an unrelated hand fix"
+
+
+def test_undo_batch_on_unknown_or_none_batch_is_a_no_op(conn):
+    corrections.apply(conn, 1, "namaz hai khusho ki zuban mein")
+    assert corrections.undo_batch(conn, None) == 0
+    assert corrections.undo_batch(conn, "nope-not-a-real-batch") == 0
+    shown = conn.execute(
+        "SELECT COALESCE(NULLIF(TRIM(roman_clean),''), roman_text) FROM segments WHERE id=1"
+    ).fetchone()[0]
+    assert shown == "namaz hai khusho ki zuban mein"   # unchanged
+
+
+# --- word_matches_fixable: what the fix-words page is allowed to offer ---------
+
+def test_word_matches_fixable_excludes_hand_corrected_lines(conn):
+    corrections.apply(conn, 2, "dusri seedhi line", who="junaid")
+    rows, _variants, _total = corrections.word_matches(conn, ["line"])
+    assert any(r["segment_id"] == 2 and r["human"] for r in rows)   # engine still flags it
+    fixable, _variants, _total = corrections.word_matches_fixable(conn, ["line"])
+    assert all(r["segment_id"] != 2 for r in fixable)   # the page never offers it

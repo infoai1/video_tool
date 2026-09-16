@@ -1,133 +1,139 @@
 {% extends "base.html" %}
-{% block title %}Fix a word everywhere{% endblock %}
+{% block title %}Fix a word{% endblock %}
 {% block head %}<meta name="robots" content="noindex, nofollow">{% endblock %}
 {% block content %}
 <style>
-  .fw-head{max-width:640px;margin:4px 0 14px}
-  .fw-h1{font-size:20px;font-weight:700;letter-spacing:-.02em;margin:4px 0 8px}
-  .fw-sub{font-size:14.5px;line-height:1.6;color:var(--muted);margin:0 0 6px;max-width:64ch}
-  .fw-form{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:14px 0}
-  .fw-form input[type=text]{font:inherit;padding:8px 10px;border:1px solid var(--line);
-    border-radius:8px;background:var(--surface);color:var(--ink);width:14em}
-  .fw-form button{font:inherit;font-size:14.5px;font-weight:600;padding:9px 18px;border:0;
-    border-radius:8px;background:var(--accent);color:#fff;cursor:pointer}
-  .fw-form button.ghost{background:var(--surface);color:var(--ink);border:1px solid var(--line)}
-  .fw-err{color:#b00;font-size:14px;margin:6px 0}
-  .fw-ok{margin:10px 0;padding:10px 14px;border-radius:10px;
-    background:var(--accent-soft,rgba(0,128,96,.12));color:var(--accent);font-size:14px;max-width:64ch}
-  .fw-variants{font-size:13.5px;color:var(--muted);margin:4px 0 14px}
-  .fw-chip{font-size:13px;color:var(--accent);text-decoration:none}
-  .fw-chip:hover{text-decoration:underline}
-  .fw-player{max-width:640px;aspect-ratio:16/9;background:#000;border-radius:10px;overflow:hidden;
-    margin:0 0 16px;display:none}
-  .fw-player.on{display:block}
-  .fw-player iframe{width:100%;height:100%;border:0}
-  .fw-lecture{margin:0 0 20px;max-width:820px}
-  .fw-lecture h3{font-size:15px;margin:0 0 6px}
-  .fw-row{display:flex;gap:10px;align-items:baseline;padding:4px 0;font-size:14px}
-  .fw-row.human{color:var(--muted)}
-  .fw-row .fw-t{color:var(--muted);font-variant-numeric:tabular-nums;font-size:12.5px;white-space:nowrap}
-  .fw-row .fw-play{border:0;background:none;cursor:pointer;color:var(--accent);padding:0 2px}
-  .fw-row.playing{background:var(--accent-soft,rgba(0,128,96,.10));border-radius:6px}
-  .fw-row mark{background:#ffe08a;color:inherit;border-radius:3px;padding:0 2px}
-  .fw-replace{font-size:14px;margin:14px 0}
-  table.fw-list{border-collapse:collapse;width:100%;max-width:760px;font-size:13.5px;margin-top:10px}
-  table.fw-list td, table.fw-list th{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left}
+  .wf-search{position:sticky;top:0;z-index:5;background:var(--bg);padding:10px 16px;
+    margin:0 -16px 4px;border-bottom:1px solid var(--line)}
+  .wf-search form{display:flex;align-items:center;gap:8px;background:var(--panel);
+    border:1px solid var(--line);border-radius:999px;padding:10px 16px;max-width:480px}
+  .wf-search svg{width:18px;height:18px;flex:none;fill:none;stroke:var(--muted);stroke-width:2}
+  .wf-search input{font:inherit;font-size:16px;border:0;background:none;color:var(--fg);
+    outline:none;width:100%}
+  .wf-count{font-size:13.5px;color:var(--muted);margin:12px 16px}
+  .wf-list{list-style:none;margin:0;padding:0 0 90px}
+  .wf-row{display:flex;width:100%;text-align:left;gap:12px;align-items:flex-start;
+    padding:12px 16px;border:0;border-bottom:1px solid var(--line);background:none;
+    font:inherit;color:var(--fg);cursor:pointer}
+  .wf-row.on{background:var(--accent-soft)}
+  .wf-play{flex:none;width:34px;height:34px;border-radius:50%;border:0;
+    background:var(--accent-soft);color:var(--accent);display:flex;align-items:center;
+    justify-content:center;pointer-events:none}
+  .wf-play svg{width:14px;height:14px;fill:currentColor}
+  .wf-txt{min-width:0}
+  .wf-txt p{margin:0;font-size:16px;line-height:1.4;overflow-wrap:anywhere}
+  .wf-txt mark{background:var(--mark);color:inherit;border-radius:3px;padding:0 2px}
+  .wf-meta{margin:3px 0 0;font-size:12.5px;color:var(--muted)}
+  .wf-frame{width:100%;aspect-ratio:16/9;background:#000}
+  .wf-frame iframe{width:100%;height:100%;border:0}
+  .wf-empty{margin:40px 16px;color:var(--muted);font-size:14.5px}
+  .wf-scrim{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:20;opacity:0;
+    pointer-events:none;transition:opacity .2s}
+  .wf-scrim.on{opacity:1;pointer-events:auto}
+  .wf-sheet{position:fixed;left:0;right:0;bottom:0;z-index:21;background:var(--panel);
+    border-radius:16px 16px 0 0;box-shadow:var(--shadow);padding:18px 16px calc(18px + env(safe-area-inset-bottom));
+    transform:translateY(100%);transition:transform .25s ease-out}
+  .wf-sheet.on{transform:translateY(0)}
+  .wf-swap{display:flex;align-items:center;gap:10px;font-size:16px;margin:0 0 16px;flex-wrap:wrap}
+  .wf-swap del{color:var(--muted)}
+  .wf-swap input{font:inherit;font-size:16px;padding:8px 10px;border:1px solid var(--line);
+    border-radius:8px;background:var(--bg);color:var(--fg);min-width:0;flex:1}
+  .wf-sheet button{display:flex;align-items:center;justify-content:space-between;width:100%;
+    font:inherit;font-size:15.5px;font-weight:600;padding:13px 16px;border:0;border-radius:10px;
+    background:var(--bg);color:var(--fg);margin:0 0 10px;cursor:pointer}
+  .wf-sheet button:last-of-type{background:var(--accent);color:var(--accent-ink);margin-bottom:0}
+  .wf-sheet button span{font-weight:400;opacity:.85}
+  .wf-toast{position:fixed;left:16px;right:16px;bottom:16px;z-index:22;background:#1b1a13;
+    color:#ece9e1;border-radius:12px;padding:12px 16px;display:flex;align-items:center;
+    justify-content:space-between;gap:12px;font-size:14.5px;transform:translateY(120%);
+    transition:transform .25s ease-out}
+  .wf-toast.on{transform:translateY(0)}
+  .wf-toast button{font:inherit;font-weight:700;color:#57d6b4;background:none;border:0;
+    padding:4px;cursor:pointer}
+  @media (prefers-reduced-motion:reduce){.wf-sheet,.wf-scrim,.wf-toast{transition:none}}
 </style>
-<div class="fw-head">
-  <h1 class="fw-h1">Fix a word everywhere</h1>
-  <p class="fw-sub">Type the correct spelling, and optionally other spellings to find
-    after it, separated by spaces or commas (e.g. <i>khushu khusho khashu</i>). Every
-    line in the library carrying any of those spellings shows up below, grouped by
-    lecture, so you can play, check, and fix them all at once. A line already
-    corrected by hand is left alone.</p>
+
+<div class="wf-search">
+  <form method="get" action="{{ url_for('fix_words_page') }}">
+    <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.4-3.4"/></svg>
+    <input type="text" name="w" value="{{ w }}" autocomplete="off" autocapitalize="off"
+      placeholder="Find a word to fix&hellip;" aria-label="Word to fix" maxlength="40">
+  </form>
 </div>
 
-<form method="get" class="fw-form">
-  <label>Word(s) <input type="text" name="w" value="{{ w }}" maxlength="200" required></label>
-  <button type="submit" class="ghost">Find</button>
-</form>
-{% if error %}<p class="fw-err">{{ error }}</p>{% endif %}
-
-{% if suggestions %}
-<p class="fw-sub">Other spellings the transcripts use &mdash; tap to add:
-  {% for term, cnt in suggestions %}
-  <a href="{{ url_for('fix_words_page', w=(w ~ ' ' ~ term)) }}" class="fw-chip">{{ term }} ({{ cnt }})</a>{% if not loop.last %}, {% endif %}
-  {% endfor %}
-  <br><small>These match by consonant skeleton, not meaning &mdash; some may be unrelated words
-  that happen to sound similar (e.g. khushi/khushu). You decide which to add.</small></p>
-{% endif %}
-
-{% if result %}
-  {% if result.error %}
-    <p class="fw-err">{{ result.error }}</p>
+{% if w %}
+  {% if rows %}
+  <p class="wf-count"><b>{{ total }}</b> line{{ '' if total == 1 else 's' }} say this &middot; tap one to hear it</p>
+  <ul class="wf-list" id="wf-list">
+    {% for r in rows %}
+    <li>
+      <button type="button" class="wf-row" data-yt="{{ r.youtube_id }}" data-t="{{ r.start_time|int }}"
+        data-seg="{{ r.segment_id }}">
+        <span class="wf-play"><svg viewBox="0 0 24 24"><path d="M6 4l14 8-14 8z"/></svg></span>
+        <span class="wf-txt">
+          <p>{{ highlight(r.text, variants) }}</p>
+          <p class="wf-meta">{{ r.title }} &middot; {{ r.start_time|hhmmss }}</p>
+        </span>
+      </button>
+    </li>
+    {% endfor %}
+  </ul>
   {% else %}
-    <p class="fw-ok">Replaced in {{ result.lines }} line{{ '' if result.lines == 1 else 's' }} across
-      {{ result.lectures }} lecture{{ '' if result.lectures == 1 else 's' }}
-      · {{ result.skipped_human }} skipped, fixed by hand</p>
+  <p class="wf-empty">No line in the library has that word, in any spelling we can find.</p>
   {% endif %}
 {% endif %}
 
-{% if w and lectures %}
-<p class="fw-variants">Spellings found: {{ variants|join(', ') }}
-  {% if total > shown %}&middot; showing {{ shown }} of {{ total }}{% endif %}</p>
-
-<div class="fw-player" id="wr-player"></div>
-
-<form method="post">
+<div class="wf-scrim" id="wf-scrim"></div>
+<form class="wf-sheet" id="wf-sheet" method="post" action="{{ url_for('fix_words_page') }}">
   <input type="hidden" name="w" value="{{ w }}">
-  {% for lec in lectures %}
-  <div class="fw-lecture">
-    <h3>{{ lec.title }}</h3>
-    {% for r in lec.lines %}
-    <div class="fw-row{% if r.human %} human{% endif %}" data-yt="{{ lec.youtube_id }}" data-t="{{ r.start_time|int }}">
-      {% if not r.human %}<input type="checkbox" name="seg" value="{{ r.segment_id }}" checked>{% endif %}
-      <button type="button" class="fw-play" onclick="wrPlay('{{ lec.youtube_id }}', {{ r.start_time|int }}, this.closest('.fw-row'))" title="Play here">&#9658;</button>
-      <span class="fw-t">{{ r.start_time|hhmmss }}</span>
-      <span>{{ highlight(r.text, variants) }}{% if r.human %} &mdash; fixed by hand{% endif %}</span>
-    </div>
-    {% endfor %}
+  <input type="hidden" name="seg" id="wf-seg" value="">
+  <div class="wf-swap"><del id="wf-was"></del> &rarr;
+    <input type="text" name="correct" id="wf-correct" value="{{ w }}" autocomplete="off" autocapitalize="off" maxlength="40">
   </div>
-  {% endfor %}
-  <p class="fw-replace">Replace each highlighted word with: <b>{{ words[0] }}</b></p>
-  <button type="submit" name="action" value="ticked" class="ghost">Apply to ticked</button>
-  <button type="submit" name="action" value="all">Apply to all</button>
+  <button type="submit" name="scope" value="one">Only this line</button>
+  <button type="submit" name="scope" value="all">Every line like it <span id="wf-sheet-count">{{ total }}</span></button>
 </form>
-{% elif w %}
-<p class="fw-sub">No line in the library has that word, in any spelling we can find.</p>
-{% endif %}
 
-{% if remembered %}
-<h3 class="fw-h1" style="font-size:16px;margin-top:28px">Recent fixes</h3>
-<table class="fw-list">
-  <tr><th>When</th><th>Lecture</th><th>Was &rarr; Now</th><th>By</th><th></th></tr>
-  {% for r in remembered %}
-  <tr>
-    <td>{{ r.at }}</td>
-    <td>{{ r.title }}</td>
-    <td>{{ r.was }} &rarr; {{ r.now }}</td>
-    <td>{{ r.who }}</td>
-    <td>
-      <form method="post" style="display:inline">
-        <input type="hidden" name="w" value="{{ w }}">
-        <button type="submit" name="revert" value="{{ r.segment_id }}" class="ghost">Undo</button>
-      </form>
-    </td>
-  </tr>
-  {% endfor %}
-</table>
+{% if result and 'error' not in result %}
+<div class="wf-toast on" id="wf-toast">
+  <span>Fixed {{ result.lines }} line{{ '' if result.lines == 1 else 's' }}</span>
+  <form method="post" action="{{ url_for('fix_words_page') }}">
+    <input type="hidden" name="w" value="{{ w }}">
+    <input type="hidden" name="batch" value="{{ batch }}">
+    <button type="submit" name="undo" value="1">UNDO</button>
+  </form>
+</div>
 {% endif %}
 
 <script>
-window.wrPlay = function (yid, t, rowEl) {
-  var p = document.getElementById('wr-player');
-  if (!p || !yid) return;
-  p.innerHTML = '<iframe src="https://www.youtube.com/embed/' + yid + '?start=' + (t || 0) +
-    '&autoplay=1&rel=0" allow="autoplay; encrypted-media" allowfullscreen></iframe>';
-  p.classList.add('on');
-  document.querySelectorAll('.fw-row.playing').forEach(function (el) { el.classList.remove('playing'); });
-  if (rowEl) rowEl.classList.add('playing');
-  if (window.innerWidth < 980) p.scrollIntoView({ behavior: 'smooth', block: 'start' });
-};
+(function () {
+  var list = document.getElementById('wf-list');
+  var scrim = document.getElementById('wf-scrim');
+  var sheet = document.getElementById('wf-sheet');
+  var active = null, frame = null;
+  function closeSheet() { sheet.classList.remove('on'); scrim.classList.remove('on'); }
+  function closePlayer() { if (frame) { frame.remove(); frame = null; } if (active) { active.classList.remove('on'); active = null; } }
+  if (list) list.addEventListener('click', function (e) {
+    var row = e.target.closest('.wf-row');
+    if (!row) return;
+    if (active === row) { closePlayer(); closeSheet(); return; }
+    closePlayer();
+    var yid = row.getAttribute('data-yt'), t = row.getAttribute('data-t');
+    if (yid) {
+      frame = document.createElement('div');
+      frame.className = 'wf-frame';
+      frame.innerHTML = '<iframe src="https://www.youtube.com/embed/' + yid + '?start=' + t +
+        '&autoplay=1&rel=0" allow="autoplay; encrypted-media" allowfullscreen></iframe>';
+      row.insertAdjacentElement('afterend', frame);
+    }
+    row.classList.add('on');
+    active = row;
+    document.getElementById('wf-seg').value = row.getAttribute('data-seg');
+    document.getElementById('wf-was').textContent =
+      row.querySelector('.wf-txt mark') ? row.querySelector('.wf-txt mark').textContent : '';
+    setTimeout(function () { sheet.classList.add('on'); scrim.classList.add('on'); }, 900);
+  });
+  scrim.addEventListener('click', closeSheet);
+}());
 </script>
 {% endblock %}

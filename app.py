@@ -671,71 +671,72 @@ def video(video_id):
     )
 
 
+_FIX_WORDS_LIMIT = 300  # ponytail: hard cap, no "showing N of M" -- upgrade: paginate if this bites
+
+
+def _fix_words_word(raw):
+    """A single word off the query/post, or "" if it doesn't look like one."""
+    w = (raw or "").strip()
+    return w if _re.fullmatch(r"[A-Za-z']{1,40}", w or "") else ""
+
+
 @app.route("/fix/words", methods=["GET", "POST"])
 def fix_words_page():
-    """Find every line with a word, in any spelling, and fix it everywhere.
+    """One word, tap a line to hear it, tap the sentence to fix it everywhere.
 
-    The owner types the CORRECT spelling; word_matches() finds every line
-    across the whole library carrying any variant of it (the same fold
-    search.py matches queries on), grouped for review with one player at
-    the top. Ticking lines and pressing Apply runs corrections.apply_word,
-    which writes the page, the search text and the index together -- same
-    as a single-line correction, just for many lines at once.
+    GET: word_matches_fixable() finds every line across the library carrying
+    any variant spelling of the typed word (the same fold search.py matches
+    queries on) -- lines already fixed by hand are never offered here.
+    POST: corrections.apply_word() rewrites the page, the search text and the
+    index together, for one line (scope=one) or every matching line
+    (scope=all); the batch it returns lets the toast's Undo button revert the
+    whole action in one call.
     """
     if not db.exists():
         abort(404)
     conn = db.connect()
     try:
-        w = (request.values.get("w") or "").strip()
-        words = _re.split(r"[\s,]+", w) if w else []
-        words = [t for t in words if t]
-        error = None
-        if words and (len(words) > 8 or any(
-                len(t) > 40 or not _re.fullmatch(r"[A-Za-z']+", t) for t in words)):
-            error, w, words = (
-                "one to eight words, letters and apostrophes only, please "
-                "(max 40 characters each)", "", [])
+        w = _fix_words_word(request.values.get("w"))
         result = None
-        if request.method == "POST" and words:
-            revert_id = request.form.get("revert", type=int)
-            if revert_id is not None:
-                prior = corrections.last(conn, revert_id)
-                if prior is not None:
-                    corrections.apply(conn, revert_id, prior["was"], who="revert")
+        batch = request.values.get("batch") or None
+        if request.method == "POST" and w:
+            if request.form.get("undo") == "1":
+                if batch:
+                    corrections.undo_batch(conn, batch)
                     conn.commit()
+                batch = None
             else:
-                action = request.form.get("action")
-                ids = request.form.getlist("seg", type=int) if action == "ticked" else None
-                result = corrections.apply_word(conn, words, ids=ids, who=session.get("user") or "owner")
-                if "error" not in result:
-                    conn.commit()
-        rows, variants, total = corrections.word_matches(conn, words) if words else ([], set(), 0)
-        suggestions = corrections.spellings_like(conn, words[0]) if words else []
-        suggestions = [(t, c) for t, c in suggestions if t not in {t2.lower() for t2 in words}]
-        remembered = corrections.recent(conn)
-        if remembered:
-            vids = {r["video_id"] for r in remembered if r["video_id"] is not None}
-            qm = ",".join("?" * len(vids)) if vids else ""
-            titles = dict(conn.execute(
-                f"SELECT id, title FROM videos WHERE id IN ({qm})", tuple(vids))) if vids else {}
-            for r in remembered:
-                r["title"] = titles.get(r["video_id"], "")
+                correct = _fix_words_word(request.form.get("correct"))
+                scope = request.form.get("scope")
+                seg_id = request.form.get("seg", type=int)
+                if correct:
+                    ids = [seg_id] if scope == "one" and seg_id is not None else None
+                    # `w` is the spelling the owner searched for (often the wrong one) --
+                    # apply_word needs it alongside the correct spelling so it still finds
+                    # the very lines this page is showing, not just already-correct ones.
+                    result = corrections.apply_word(
+                        conn, [correct, w], ids=ids, who=session.get("user") or "owner")
+                    if "error" not in result:
+                        conn.commit()
+                        batch = result.get("batch")
+                        w = correct  # re-render under the spelling the owner just chose
+        rows, variants, total = (
+            corrections.word_matches_fixable(conn, [w], limit=_FIX_WORDS_LIMIT) if w else ([], set(), 0))
+        # total from word_matches_fixable counts human-corrected lines too (it comes
+        # from the underlying word_matches before that filter); the count line means
+        # "lines you can act on", so use what's actually shown.
+        # ponytail: undercounts a fixable line beyond the 300-cap that got pushed out
+        # only because rows ahead of it were human-corrected; upgrade: a dedicated
+        # COUNT query if this page ever needs an exact number past the cap.
+        total = len(rows)
+        for r in rows:
+            r["youtube_id"] = search.youtube_id(r["youtube_url"])
+            r["title"] = seo.clean_title(r["title"])
     finally:
         conn.close()
-    # group by lecture for the template, preserving the title-then-time order
-    # word_matches() already returned.
-    lectures = []
-    by_video = {}
-    for r in rows:
-        if r["video_id"] not in by_video:
-            by_video[r["video_id"]] = {"title": r["title"], "youtube_id": search.youtube_id(r["youtube_url"]),
-                                        "lines": []}
-            lectures.append(by_video[r["video_id"]])
-        by_video[r["video_id"]]["lines"].append(r)
     return render_template(
-        "fix_words.html", w=w, words=words, error=error, result=result, lectures=lectures,
-        variants=sorted(variants), total=total, shown=len(rows), suggestions=suggestions,
-        remembered=remembered, highlight=_highlight_variants, hhmmss=_hhmmss, no_store=True)
+        "fix_words.html", w=w, rows=rows, variants=sorted(variants), total=total,
+        result=result, batch=batch, highlight=_highlight_variants, hhmmss=_hhmmss, no_store=True)
 
 
 @app.route("/video/<int:video_id>/export.docx")
