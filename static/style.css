@@ -768,6 +768,9 @@ pre { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; 
   }
   .vtools::-webkit-scrollbar { display: none; }
   .vtools > * { flex: none; }
+  /* the toolbar scrolls sideways, which clips a dropdown inside it: float the Export menu above it */
+  .export { position: static; }
+  .export-menu { position: fixed; left: .9rem; right: .9rem; top: calc(var(--pin-top, 0px) + .5rem); z-index: 50; min-width: 0; margin-top: 0; }
   .vtools .seg button, .vtools .btn, .export > summary { min-height: 40px; padding: 0 .8rem; }
   .filter { min-height: 44px; margin: .6rem 0; }
   .transcript .line { padding: .6rem 0; gap: .7rem; }
