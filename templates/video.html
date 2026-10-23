@@ -433,11 +433,40 @@
     scriptSel.addEventListener('change', rebuild);
     tsBox.addEventListener('change', rebuild);
     rebuild();
+    // Fetch the file ourselves so the visitor always sees what happened: phone
+    // and in-app browsers often ignore a plain download link without a word.
+    var status = document.createElement('div');
+    status.className = 'muted'; status.setAttribute('role', 'status'); status.style.marginTop = '6px';
+    link.parentNode.appendChild(status);
+    async function saveDocx() {
+      var prev = link.textContent; link.classList.add('disabled'); link.textContent = 'Preparing…';
+      status.textContent = '';
+      try {
+        var r = await fetch(link.href, { credentials: 'same-origin' });
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        var blob = await r.blob();
+        var m = /filename="([^"]+)"/.exec(r.headers.get('Content-Disposition') || '');
+        var name = m ? m[1] : 'transcript.docx';
+        var file = null;
+        try { file = new File([blob], name, { type: blob.type }); } catch (x) {}
+        if (file && navigator.canShare && navigator.canShare({ files: [file] }) &&
+            /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+          try { await navigator.share({ files: [file], title: name }); status.textContent = 'Choose “Save to Files” (or your Word app) to keep it.'; return; }
+          catch (x) { if (x && x.name === 'AbortError') { status.textContent = 'Cancelled.'; return; } }
+        }
+        var u = URL.createObjectURL(blob), a = document.createElement('a');
+        a.href = u; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(function () { URL.revokeObjectURL(u); }, 60000);
+        status.textContent = 'Saved “' + name + '” — check your Downloads folder.';
+      } catch (err) {
+        status.innerHTML = 'Could not download here. <a href="' + link.href + '" target="_blank" rel="noopener">Open the file directly</a> or try another browser.';
+      } finally { link.textContent = prev; link.classList.remove('disabled'); }
+    }
     link.addEventListener('click', async function (e) {
       var empties = [].slice.call(document.querySelectorAll('.roman[data-seg]'))
         .filter(function (el) { return !el.textContent.trim(); });
       var needsRoman = (scriptSel.value === 'roman' || scriptSel.value === 'both') && empties.length;
-      if (!needsRoman) return;
+      if (!needsRoman) { e.preventDefault(); saveDocx(); return; }
       e.preventDefault();
       var prev = link.textContent; link.classList.add('disabled');
       try {
